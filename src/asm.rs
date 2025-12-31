@@ -55,23 +55,31 @@ pub struct Line<'a> {
     pub inner: Option<LineInner<'a>>,
 }
 
+macro_rules! padded {
+    ($inner: expr) => {{
+        $inner.padded_by(text::inline_whitespace())
+    }};
+}
+
+macro_rules! with_sep {
+    ($inner: expr) => {{
+        $inner.then_ignore(text::inline_whitespace().repeated().at_least(1))
+    }};
+}
+
 fn param<'a>() -> impl Parser<'a, &'a str, Parameter<'a>> {
-    choice((
-        just('@')
-            .ignore_then(expr())
-            .map(|e| Parameter(ParamMode::Relative, e)),
-        just('#')
-            .ignore_then(expr())
-            .map(|e| Parameter(ParamMode::Immediate, e)),
+    padded!(choice((
+        just('@').ignore_then(expr().map(|e| Parameter(ParamMode::Relative, e))),
+        just('#').ignore_then(expr().map(|e| Parameter(ParamMode::Immediate, e))),
         expr().map(|e| Parameter(ParamMode::Positional, e)),
-    ))
+    )))
 }
 
 fn instr<'a>() -> impl Parser<'a, &'a str, Instr<'a>> {
     macro_rules! params {
         ($n: literal) => {{
-            param()
-                .separated_by(just(',').padded_by(text::inline_whitespace()))
+            padded!(param())
+                .separated_by(padded!(just(',')))
                 .exactly($n)
                 .collect::<Vec<_>>()
                 .map(|v| <[Parameter; $n]>::try_from(v).expect("sized"))
@@ -79,18 +87,15 @@ fn instr<'a>() -> impl Parser<'a, &'a str, Instr<'a>> {
     }
     macro_rules! op {
         ($name: literal, $variant: ident ::<1>) => {
-            just($name)
-                .padded_by(text::inline_whitespace())
-                .ignore_then(param().padded_by(text::inline_whitespace()))
+            with_sep!(just($name))
+                .ignore_then(param())
                 .map(Instr::$variant)
         };
         ($name: literal, $variant: ident ::<2>) => {
-            just($name)
-                .padded_by(text::inline_whitespace())
-                .ignore_then((params!(2)).map(|[a, b]| Instr::$variant(a, b)))
+            with_sep!(just($name)).ignore_then((params!(2)).map(|[a, b]| Instr::$variant(a, b)))
         };
         ($name: literal, $variant: ident ::<3>) => {
-            just($name)
+            with_sep!(just($name))
                 .padded_by(text::inline_whitespace())
                 .ignore_then((params!(3)).map(|[a, b, c]| Instr::$variant(a, b, c)))
         };
@@ -108,62 +113,62 @@ fn instr<'a>() -> impl Parser<'a, &'a str, Instr<'a>> {
         op!("SEQ", Seq::<3>),
         op!("EQ", Seq::<3>),
         op!("INCB", Incb::<1>),
-        just("HALT")
-            .padded_by(text::inline_whitespace())
-            .to(Instr::Halt),
+        padded!(just("HALT")).to(Instr::Halt),
     ))
 }
 
 fn expr<'a>() -> impl Parser<'a, &'a str, Expr<'a>> + Clone {
-    recursive(|e| {
-        choice((
-            e.delimited_by(just('('), just(')'))
-                .map(Arc::new)
-                .map(Expr::Inner),
-            expr()
-                .then(one_of("*/"))
-                .then(expr())
-                .map(|((a, b), c)| Expr::BinOp {
-                    op: match b {
-                        '*' => BinOperator::Mul,
-                        '/' => BinOperator::Div,
-                        _ => unreachable!(),
-                    },
-                    lhs: Arc::new(a),
-                    rhs: Arc::new(c),
-                }),
-            expr()
-                .then(one_of("+-"))
-                .then(expr())
-                .map(|((a, b), c)| Expr::BinOp {
-                    lhs: Arc::new(a),
-                    op: match b {
-                        '+' => BinOperator::Add,
-                        '-' => BinOperator::Sub,
-                        _ => unreachable!(),
-                    },
-                    rhs: Arc::new(c),
-                }),
-            just("-")
-                .then(expr())
-                .map(|(_, e)| Expr::Negate(Arc::new(e))),
-            just("+")
-                .then(expr())
-                .map(|(_, e)| Expr::UnaryAdd(Arc::new(e))),
-            text::ident().map(|s: &str| Expr::Ident(s)),
-            text::int(10).try_map(|s: &str, _| {
-                s.parse::<i64>()
-                    .map(Expr::Number)
-                    .map_err(|_| EmptyErr::default())
-            }),
-            todo(),
-        ))
+    recursive(|expr| {
+        let int = text::int(10).try_map(|s: &str, _| {
+            s.parse::<i64>()
+                .map(Expr::Number)
+                .map_err(|_| EmptyErr::default())
+        });
+        let ident = text::ident().map(|s: &str| Expr::Ident(s));
+        let atom = int.or(ident);
+        let unary = padded!(one_of("-+"))
+            .repeated()
+            .foldr(atom, |op, rhs| match op {
+                '+' => Expr::UnaryAdd(Arc::new(rhs)),
+                '-' => Expr::Negate(Arc::new(rhs)),
+                _ => unreachable!(),
+            });
+        let folder = |lhs: Expr<'a>, (op, rhs): (BinOperator, Expr<'a>)| Expr::BinOp {
+            lhs: Arc::new(lhs),
+            op,
+            rhs: Arc::new(rhs),
+        };
+
+        let prod = unary.foldl(
+            choice((
+                padded!(just('*')).to(BinOperator::Mul),
+                padded!(just('/')).to(BinOperator::Div),
+            ))
+            .then(unary)
+            .repeated(),
+            folder,
+        );
+        let sum = prod.clone().foldl(
+            choice((
+                padded!(just('+')).to(BinOperator::Add),
+                padded!(just('-')).to(BinOperator::Sub),
+            ))
+            .then(prod)
+            .repeated(),
+            folder,
+        );
+
+        expr.padded_by(text::inline_whitespace())
+            .delimited_by(just('('), just(')'))
+            .map(|e: Expr<'a>| Expr::Inner(Arc::new(e)))
+            .or(atom)
+            .or(sum)
     })
 }
 
 fn line_inner<'a>() -> impl Parser<'a, &'a str, Option<LineInner<'a>>> {
-    ((just("DATA").padded_by(text::inline_whitespace()))
-        .ignore_then(expr().separated_by(just(",")).collect())
+    with_sep!(just("DATA")
+        .ignore_then(expr().separated_by(padded!(just(","))).collect())
         .map(LineInner::DataDirective))
     .or(instr().map(LineInner::Instruction))
     .or_not()
@@ -181,8 +186,10 @@ fn grammar<'a>() -> impl Parser<'a, &'a str, Vec<Line<'a>>> {
     parse_line().separated_by(just("\n")).collect()
 }
 
+/// A newtype that wraps around the chumsky error vector from the AST, to allow for changing the
+/// underlying error type or parser in the future
 #[derive(Debug)]
-pub struct AstParseError(#[allow(unused, reason = "for error info")] Vec<chumsky::error::EmptyErr>);
+pub struct AstParseError(#[allow(unused, reason = "for error info")] Vec<EmptyErr>);
 
 /// Parse the assembly code into a [Vec<Line<'a>>]
 pub fn build_ast<'a>(s: &'a str) -> Result<Vec<Line<'a>>, AstParseError> {
