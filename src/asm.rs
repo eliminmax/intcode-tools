@@ -172,10 +172,10 @@ fn expr<'a>() -> impl Parser<'a, &'a str, Expr<'a>> + Clone {
 }
 
 fn line_inner<'a>() -> impl Parser<'a, &'a str, Option<LineInner<'a>>> {
-    padded!(with_sep!(just("DATA")
+    (with_sep!(just("DATA"))
         .ignore_then(expr().separated_by(padded!(just(","))).collect())
         .map(LineInner::DataDirective))
-    .or(instr().map(LineInner::Instruction)))
+    .or(instr().map(LineInner::Instruction))
     .or_not()
 }
 
