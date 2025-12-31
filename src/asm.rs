@@ -86,7 +86,7 @@ fn param<'a>() -> impl Parser<'a, &'a str, Parameter<'a>> {
 fn instr<'a>() -> impl Parser<'a, &'a str, Instr<'a>> {
     macro_rules! params {
         ($n: literal) => {{
-            padded!(param())
+            param()
                 .separated_by(padded!(just(',')))
                 .exactly($n)
                 .collect::<Vec<_>>()
@@ -95,9 +95,7 @@ fn instr<'a>() -> impl Parser<'a, &'a str, Instr<'a>> {
     }
     macro_rules! op {
         ($name: literal, $variant: ident ::<1>) => {
-            with_sep!(just($name))
-                .ignore_then(param())
-                .map(Instr::$variant)
+            with_sep!(just($name)).ignore_then(param().map(Instr::$variant))
         };
         ($name: literal, $variant: ident ::<2>) => {
             with_sep!(just($name)).ignore_then((params!(2)).map(|[a, b]| Instr::$variant(a, b)))
@@ -174,10 +172,10 @@ fn expr<'a>() -> impl Parser<'a, &'a str, Expr<'a>> + Clone {
 }
 
 fn line_inner<'a>() -> impl Parser<'a, &'a str, Option<LineInner<'a>>> {
-    with_sep!(just("DATA")
+    padded!(with_sep!(just("DATA")
         .ignore_then(expr().separated_by(padded!(just(","))).collect())
         .map(LineInner::DataDirective))
-    .or(instr().map(LineInner::Instruction))
+    .or(instr().map(LineInner::Instruction)))
     .or_not()
 }
 
@@ -252,5 +250,18 @@ mod tests {
             rhs: Arc::clone(&one),
         };
         expr_test!("1 * 1 + 1", expected);
+
+        let expected = Expr::Inner(Arc::new(Expr::UnaryAdd(Arc::new(Expr::Ident("e")))));
+        expr_test!("(+e)", expected);
+        let expected = Expr::BinOp {
+            lhs: Arc::new(Expr::Inner(Arc::new(Expr::BinOp {
+                lhs: Arc::clone(&one),
+                op: BinOperator::Add,
+                rhs: Arc::new(Expr::UnaryAdd(Arc::new(Expr::Negate(Arc::new(Expr::Ident("e")))))),
+            }))),
+            op: BinOperator::Sub,
+            rhs: Arc::clone(&one),
+        };
+        expr_test!("(1 + +-e) - 1", expected);
     }
 }
