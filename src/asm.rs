@@ -217,6 +217,17 @@ mod tests {
             }
         )
     }
+    #[test]
+    fn parse_data() {
+        assert_eq!(
+            line_inner().parse("DATA 1, 1, 1").unwrap(),
+            Some(LineInner::DataDirective(vec![
+                Expr::Number(1),
+                Expr::Number(1),
+                Expr::Number(1)
+            ]))
+        );
+    }
 
     #[test]
     fn parse_exprs() {
@@ -257,7 +268,9 @@ mod tests {
             lhs: Arc::new(Expr::Inner(Arc::new(Expr::BinOp {
                 lhs: Arc::clone(&one),
                 op: BinOperator::Add,
-                rhs: Arc::new(Expr::UnaryAdd(Arc::new(Expr::Negate(Arc::new(Expr::Ident("e")))))),
+                rhs: Arc::new(Expr::UnaryAdd(Arc::new(Expr::Negate(Arc::new(
+                    Expr::Ident("e"),
+                ))))),
             }))),
             op: BinOperator::Sub,
             rhs: Arc::clone(&one),
