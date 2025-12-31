@@ -18,8 +18,8 @@ pub enum Expr<'a> {
     Number(i64),
     Ident(&'a str),
     BinOp {
-        op: BinOperator,
         lhs: Arc<Expr<'a>>,
+        op: BinOperator,
         rhs: Arc<Expr<'a>>,
     },
     Negate(Arc<Expr<'a>>),
@@ -136,12 +136,12 @@ fn expr<'a>() -> impl Parser<'a, &'a str, Expr<'a>> + Clone {
                 .then(one_of("+-"))
                 .then(expr())
                 .map(|((a, b), c)| Expr::BinOp {
+                    lhs: Arc::new(a),
                     op: match b {
                         '+' => BinOperator::Add,
                         '-' => BinOperator::Sub,
                         _ => unreachable!(),
                     },
-                    lhs: Arc::new(a),
                     rhs: Arc::new(c),
                 }),
             just("-")

@@ -18,7 +18,7 @@ impl Display for Expr<'_> {
         match self {
             Expr::Number(n) => write!(f, "{n}"),
             Expr::Ident(id) => write!(f, "{id}"),
-            Expr::BinOp { op, lhs, rhs } => write!(f, "{lhs} {op} {rhs}"),
+            Expr::BinOp { lhs, op, rhs } => write!(f, "{lhs} {op} {rhs}"),
             Expr::Negate(inner) => write!(f, "-{inner}"),
             Expr::UnaryAdd(inner) => write!(f, "+{inner}"),
             Expr::Inner(inner) => write!(f, "({inner})"),
