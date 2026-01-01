@@ -6,6 +6,7 @@ use chumsky::prelude::*;
 use super::ParamMode;
 use std::sync::Arc;
 #[cfg_attr(test, derive(PartialEq))]
+#[non_exhaustive]
 #[derive(Debug, Clone)]
 pub enum BinOperator {
     Add,
@@ -16,6 +17,7 @@ pub enum BinOperator {
 
 #[cfg_attr(test, derive(PartialEq))]
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub enum Expr<'a> {
     Number(i64),
     Ident(&'a str),
@@ -50,6 +52,7 @@ pub enum Instr<'a> {
 }
 
 #[cfg_attr(test, derive(PartialEq))]
+#[non_exhaustive]
 #[derive(Debug)]
 pub enum LineInner<'a> {
     DataDirective(Vec<Expr<'a>>),
