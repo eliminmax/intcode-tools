@@ -297,13 +297,16 @@ fn expr<'a>() -> impl Parser<'a, &'a str, SpannedExpr<'a>, RichErr<'a>> + Clone 
         let atom = int.or(ident).or(bracketed).spanned();
         let unary = padded!(one_of("-+").spanned()).repeated().foldr(
             atom,
-            |Spanned { inner, span }, rhs| Spanned {
-                inner: match inner {
-                    '+' => Expr::UnaryAdd(Arc::new(rhs)),
-                    '-' => Expr::Negate(Arc::new(rhs)),
-                    _ => unreachable!(),
-                },
-                span,
+            |Spanned { inner, mut span }: Spanned<char>, rhs: SpannedExpr<'a>| {
+                span.end = rhs.span.end;
+                Spanned {
+                    inner: match inner {
+                        '+' => Expr::UnaryAdd(Arc::new(rhs)),
+                        '-' => Expr::Negate(Arc::new(rhs)),
+                        _ => unreachable!(),
+                    },
+                    span,
+                }
             },
         );
 
