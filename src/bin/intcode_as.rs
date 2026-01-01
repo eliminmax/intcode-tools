@@ -1,16 +1,13 @@
-use intcode::asm::build_ast;
+use intcode::asm::{build_ast, assemble_ast};
 use std::env::args_os;
 use std::fs::read_to_string;
 
 fn main() {
-    let input = read_to_string(args_os().nth(1).expect("must provide filename")).expect("must be able to read");
+    let input = read_to_string(args_os().nth(1).expect("must provide filename"))
+        .expect("must be able to read");
 
-    match build_ast(&input) {
-        Ok(lines) => {
-            for line in lines {
-                println!("{line}")
-            }
-        }
-        Err(err) => eprintln!("{err:?}")
-    }
+    let ast = build_ast(&input).unwrap();
+    let intcode = assemble_ast(ast).unwrap();
+    let intcode: Vec<String> = intcode.into_iter().map(|i| i.to_string()).collect();
+    println!("{}", intcode.join(","));
 }

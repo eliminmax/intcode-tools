@@ -334,6 +334,27 @@ impl LineInner<'_> {
         }
     }
 }
+impl<'a> Line<'a> {
+    pub fn encode_into(
+        self,
+        v: &mut Vec<i64>,
+        labels: &HashMap<&'a str, i64>,
+    ) -> Result<(), AssemblyError<'a>> {
+        if let Some(inner) = self.inner {
+            match inner {
+                LineInner::DataDirective(exprs) => {
+                    for expr in exprs {
+                        v.push(expr.resolve(labels)?);
+                    }
+                }
+                LineInner::Instruction(instr) => {
+                    v.extend(instr.resolve(labels)?);
+                }
+            }
+        }
+        Ok(())
+    }
+}
 fn line_inner<'a>() -> impl Parser<'a, &'a str, Option<LineInner<'a>>, RichErr<'a>> {
     (with_sep!(just("DATA"))
         .ignore_then(expr().separated_by(padded!(just(","))).collect())
@@ -360,11 +381,11 @@ pub fn build_ast<'a>(code: &'a str) -> Result<Vec<Line<'a>>, Vec<Rich<'a, char>>
 }
 
 pub fn assemble_ast<'a>(code: Vec<Line<'a>>) -> Result<Vec<i64>, AssemblyError<'a>> {
-    let mut syms: HashMap<&'a str, i64> = HashMap::new();
+    let mut labels: HashMap<&'a str, i64> = HashMap::new();
     let mut index = 0;
     for line in code.iter() {
         if let Some(label) = line.label
-            && syms.insert(label, index).is_some()
+            && labels.insert(label, index).is_some()
         {
             return Err(AssemblyError::DuplicateLabel(label));
         }
@@ -373,7 +394,13 @@ pub fn assemble_ast<'a>(code: Vec<Line<'a>>) -> Result<Vec<i64>, AssemblyError<'
         }
     }
 
-    todo!()
+    let mut v = Vec::with_capacity(index.try_into().unwrap_or_default());
+
+    for line in code {
+        line.encode_into(&mut v, &labels)?;
+    }
+
+    Ok(v)
 }
 
 mod fmt_impls;
