@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2025 Eli Array Minkoff
+// SPDX-FileCopyrightText: 2025 - 2026 Eli Array Minkoff
 //
 // SPDX-License-Identifier: 0BSD
 
@@ -28,6 +28,9 @@ impl BinOperator {
     }
 }
 
+pub type SpannedExpr<'a> = Spanned<Expr<'a>>;
+type SpannedExprRc<'a> = Arc<SpannedExpr<'a>>;
+
 #[cfg_attr(test, derive(PartialEq))]
 #[derive(Debug, Clone)]
 #[non_exhaustive]
@@ -35,27 +38,27 @@ pub enum Expr<'a> {
     Number(i64),
     Ident(&'a str),
     BinOp {
-        lhs: Arc<Expr<'a>>,
-        op: BinOperator,
-        rhs: Arc<Expr<'a>>,
+        lhs: SpannedExprRc<'a>,
+        op: Spanned<BinOperator>,
+        rhs: SpannedExprRc<'a>,
     },
-    Negate(Arc<Expr<'a>>),
-    UnaryAdd(Arc<Expr<'a>>),
-    Inner(Arc<Expr<'a>>),
+    Negate(SpannedExprRc<'a>),
+    UnaryAdd(SpannedExprRc<'a>),
+    Inner(SpannedExprRc<'a>),
 }
 
 #[derive(Debug)]
 pub enum AssemblyError<'a> {
     UnresolvedLabel(&'a str),
     DuplicateLabel(&'a str),
-    WriteToImmediate(Instr<'a>),
+    WriteToImmediate(Box<Instr<'a>>),
 }
 
 impl<'a> Expr<'a> {
     pub fn resolve(self, labels: &HashMap<&'a str, i64>) -> Result<i64, AssemblyError<'a>> {
         macro_rules! inner {
             ($i: ident) => {
-                Arc::unwrap_or_clone($i).resolve(labels)?
+                Arc::unwrap_or_clone($i).inner.resolve(labels)?
             };
         }
         match self {
@@ -64,7 +67,7 @@ impl<'a> Expr<'a> {
                 .get(s)
                 .copied()
                 .ok_or(AssemblyError::UnresolvedLabel(s)),
-            Expr::BinOp { lhs, op, rhs } => Ok(op.apply(inner!(lhs), inner!(rhs))),
+            Expr::BinOp { lhs, op, rhs } => Ok(op.inner.apply(inner!(lhs), inner!(rhs))),
             Expr::Negate(expr) => Ok(-inner!(expr)),
             Expr::UnaryAdd(expr) | Expr::Inner(expr) => Ok(inner!(expr)),
         }
@@ -73,7 +76,11 @@ impl<'a> Expr<'a> {
 
 #[cfg_attr(test, derive(PartialEq))]
 #[derive(Debug, Clone)]
-pub struct Parameter<'a>(pub ParamMode, pub Expr<'a>);
+pub struct Parameter<'a>(pub ParamMode, pub SpannedExpr<'a>);
+
+fn unspan<T>(Spanned { inner, .. }: Spanned<T>) -> T {
+    inner
+}
 
 #[cfg_attr(test, derive(PartialEq))]
 #[derive(Debug, Clone)]
@@ -102,7 +109,7 @@ impl Instr<'_> {
     }
 }
 
-// A zero-allocation iterator of instructions 
+// A zero-allocation iterator of instructions
 enum InstrIter {
     Four(i64, i64, i64, i64),
     Three(i64, i64, i64),
@@ -149,7 +156,7 @@ impl<'a> Instr<'a> {
         macro_rules! imm_guard {
             ($mode: ident) => {
                 if $mode == ParamMode::Immediate {
-                    return Err(AssemblyError::WriteToImmediate(self));
+                    return Err(AssemblyError::WriteToImmediate(Box::new(self)));
                 }
             };
         }
@@ -158,12 +165,12 @@ impl<'a> Instr<'a> {
                 let Parameter(mode, expr) = $param;
                 imm_guard!(mode);
                 $instr += mode as i64 * $multiplier;
-                expr.resolve(labels)?
+                unspan(expr).resolve(labels)?
             }};
             ($param: ident * $multiplier: literal, &mut $instr: ident) => {{
                 let Parameter(mode, expr) = $param;
                 $instr += mode as i64 * $multiplier;
-                expr.resolve(labels)?
+                unspan(expr).resolve(labels)?
             }};
         }
 
@@ -208,7 +215,7 @@ impl<'a> Instr<'a> {
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum LineInner<'a> {
-    DataDirective(Vec<Expr<'a>>),
+    DataDirective(Vec<SpannedExpr<'a>>),
     Instruction(Instr<'a>),
 }
 
@@ -276,7 +283,7 @@ fn instr<'a>() -> impl Parser<'a, &'a str, Instr<'a>, RichErr<'a>> {
     )))
 }
 
-fn expr<'a>() -> impl Parser<'a, &'a str, Expr<'a>, RichErr<'a>> + Clone {
+fn expr<'a>() -> impl Parser<'a, &'a str, SpannedExpr<'a>, RichErr<'a>> + Clone {
     recursive(|expr| {
         let int = text::int(10).try_map(|s: &str, span| {
             s.parse::<i64>()
@@ -287,36 +294,54 @@ fn expr<'a>() -> impl Parser<'a, &'a str, Expr<'a>, RichErr<'a>> + Clone {
         let bracketed = expr
             .delimited_by(just('('), just(')'))
             .map(|e| Expr::Inner(Arc::new(e)));
-        let atom = int.or(ident).or(bracketed);
-        let unary = padded!(one_of("-+"))
-            .repeated()
-            .foldr(atom, |op, rhs| match op {
-                '+' => Expr::UnaryAdd(Arc::new(rhs)),
-                '-' => Expr::Negate(Arc::new(rhs)),
-                _ => unreachable!(),
-            });
+        let atom = int.or(ident).or(bracketed).spanned();
+        let unary = padded!(one_of("-+").spanned()).repeated().foldr(
+            atom,
+            |Spanned { inner, span }, rhs| Spanned {
+                inner: match inner {
+                    '+' => Expr::UnaryAdd(Arc::new(rhs)),
+                    '-' => Expr::Negate(Arc::new(rhs)),
+                    _ => unreachable!(),
+                },
+                span,
+            },
+        );
 
-        let folder = |lhs: Expr<'a>, (op, rhs): (BinOperator, Expr<'a>)| Expr::BinOp {
-            lhs: Arc::new(lhs),
-            op,
-            rhs: Arc::new(rhs),
+        let folder = |lhs: SpannedExpr<'a>, (op, rhs): (Spanned<BinOperator>, SpannedExpr<'a>)| {
+            let span = SimpleSpan {
+                start: lhs.span.start,
+                end: rhs.span.end,
+                context: (),
+            };
+            let inner = Expr::BinOp {
+                lhs: Arc::new(lhs),
+                op,
+                rhs: Arc::new(rhs),
+            };
+            Spanned { span, inner }
         };
 
         let prod = unary.clone().foldl(
-            choice((
-                padded!(just('*')).to(BinOperator::Mul),
-                padded!(just('/')).to(BinOperator::Div),
-            ))
+            padded!(
+                choice((
+                    just('*').to(BinOperator::Mul),
+                    just('/').to(BinOperator::Div),
+                ))
+                .spanned()
+            )
             .then(unary)
             .repeated(),
             folder,
         );
 
         prod.clone().foldl(
-            choice((
-                padded!(just('+')).to(BinOperator::Add),
-                padded!(just('-')).to(BinOperator::Sub),
-            ))
+            padded!(
+                choice((
+                    just('+').to(BinOperator::Add),
+                    just('-').to(BinOperator::Sub),
+                ))
+                .spanned()
+            )
             .then(prod)
             .repeated(),
             folder,
@@ -335,6 +360,7 @@ impl LineInner<'_> {
         }
     }
 }
+
 impl<'a> Line<'a> {
     pub fn encode_into(
         self,
@@ -345,7 +371,7 @@ impl<'a> Line<'a> {
             match inner {
                 LineInner::DataDirective(exprs) => {
                     for expr in exprs {
-                        v.push(expr.resolve(labels)?);
+                        v.push(unspan(expr).resolve(labels)?);
                     }
                 }
                 LineInner::Instruction(instr) => {
@@ -356,6 +382,7 @@ impl<'a> Line<'a> {
         Ok(())
     }
 }
+
 fn line_inner<'a>() -> impl Parser<'a, &'a str, Option<LineInner<'a>>, RichErr<'a>> {
     (with_sep!(just("DATA"))
         .ignore_then(expr().separated_by(padded!(just(","))).collect())
@@ -409,6 +436,26 @@ mod fmt_impls;
 #[cfg(test)]
 mod ast_tests {
     use super::*;
+
+    macro_rules! span {
+        ($start: expr, $end: expr) => {
+            SimpleSpan {
+                start: $start,
+                end: $end,
+                context: (),
+            }
+        };
+    }
+
+    macro_rules! spanned {
+        ($inner: expr, $start: expr, $end: expr) => {
+            Spanned {
+                inner: $inner,
+                span: span!($start, $end),
+            }
+        };
+    }
+
     #[test]
     fn parse_blank_line() {
         assert_eq!(
@@ -419,14 +466,24 @@ mod ast_tests {
             }
         )
     }
+
     #[test]
     fn parse_data() {
         assert_eq!(
             line_inner().parse("DATA 1, 1, 1").unwrap(),
             Some(LineInner::DataDirective(vec![
-                Expr::Number(1),
-                Expr::Number(1),
-                Expr::Number(1)
+                Spanned {
+                    inner: Expr::Number(1),
+                    span: span!(5, 6)
+                },
+                Spanned {
+                    inner: Expr::Number(1),
+                    span: span!(7, 8)
+                },
+                Spanned {
+                    inner: Expr::Number(1),
+                    span: span!(9, 10)
+                },
             ]))
         );
     }
@@ -435,23 +492,41 @@ mod ast_tests {
     fn parse_instrs() {
         let parser = instr();
         macro_rules! p {
-            (#$e: literal) => {
-                Parameter(ParamMode::Immediate, Expr::Number($e))
+            (#$e: literal, $start: expr, $end: expr) => {
+                Parameter(
+                    ParamMode::Immediate,
+                    spanned!(Expr::Number($e), $start, $end),
+                )
             };
-            (@$e: literal) => {
-                Parameter(ParamMode::Relative, Expr::Number($e))
+            (@$e: literal, $start: expr, $end: expr) => {
+                Parameter(
+                    ParamMode::Relative,
+                    spanned!(Expr::Number($e), $start, $end),
+                )
             };
-            ($e: literal) => {
-                Parameter(ParamMode::Positional, Expr::Number($e))
+            ($e: literal, $start: expr, $end: expr) => {
+                Parameter(
+                    ParamMode::Positional,
+                    spanned!(Expr::Number($e), $start, $end),
+                )
             };
-            (#$e: ident) => {
-                Parameter(ParamMode::Immediate, Expr::Ident(stringify!($e)))
+            (#$e: ident, $start: expr, $end: expr) => {
+                Parameter(
+                    ParamMode::Immediate,
+                    spanned!(Expr::Ident(stringify!($e)), $start, $end),
+                )
             };
-            (@$e: ident) => {
-                Parameter(ParamMode::Relative, Expr::Ident(stringify!($e)))
+            (@$e: ident, $start: expr, $end: expr) => {
+                Parameter(
+                    ParamMode::Relative,
+                    spanned!(Expr::Ident(stringify!($e)), $start, $end),
+                )
             };
-            ($e: ident) => {
-                Parameter(ParamMode::Positional, Expr::Ident(stringify!($e)))
+            ($e: ident, $start: expr, $end: expr) => {
+                Parameter(
+                    ParamMode::Positional,
+                    spanned!(Expr::Ident(stringify!($e)), $start, $end),
+                )
             };
         }
         macro_rules! i {
@@ -463,65 +538,97 @@ mod ast_tests {
                 parser.parse($text).unwrap()
             };
         }
-        assert_eq!(parse!("ADD #1, @1, 1"), i![Add(p!(#1), p!(@1), p!(1))]);
-        assert_eq!(parse!("MUL 3, @20, e"), i![Mul(p!(3), p!(@20), p!(e))]);
-        assert_eq!(parse!("IN #e"), i![In(p!(#e))]);
-        assert_eq!(parse!("OUT #5"), i![Out(p!(#5))]);
-        assert_eq!(parse!("JNZ @a, #b"), i![Jnz(p!(@a), p!(#b))]);
-        assert_eq!(parse!("JZ @a, #b"), i![Jz(p!(@a), p!(#b))]);
-        assert_eq!(parse!("SLT 1,@1, #5"), i![Slt(p!(1), p!(@1), p!(#5))]);
-        assert_eq!(parse!("LT 1,@1, #5"), i![Slt(p!(1), p!(@1), p!(#5))]);
-        assert_eq!(parse!("SEQ @3, 32, 1"), i![Seq(p!(@3), p!(32), p!(1))]);
-        assert_eq!(parse!("EQ @3, 32, 1"), i![Seq(p!(@3), p!(32), p!(1))]);
-        assert_eq!(parse!("INCB #hello"), i![Incb(p!(#hello))]);
+        assert_eq!(
+            parse!("ADD #1, @1, 1"),
+            i![Add(p!(#1, 5, 6), p!(@1, 9, 10), p!(1, 12, 13))]
+        );
+        assert_eq!(
+            parse!("MUL 3, @20, e"),
+            i![Mul(p!(3, 4, 5), p!(@20, 8, 10), p!(e, 12, 13))]
+        );
+        assert_eq!(parse!("IN #e"), i![In(p!(#e, 4, 5))]);
+        assert_eq!(parse!("OUT #5"), i![Out(p!(#5, 5, 6))]);
+        assert_eq!(parse!("JNZ @a, #b"), i![Jnz(p!(@a, 5, 6), p!(#b, 9, 10))]);
+        assert_eq!(parse!("JZ @a, #b"), i![Jz(p!(@a, 4, 5), p!(#b, 8, 9))]);
+        assert_eq!(
+            parse!("SLT 1,@1, #5"),
+            i![Slt(p!(1, 4, 5), p!(@1, 7, 8), p!(#5, 11, 12))]
+        );
+        assert_eq!(
+            parse!("LT 1,@1, #5"),
+            i![Slt(p!(1, 3, 4), p!(@1, 6, 7), p!(#5, 10, 11))]
+        );
+        assert_eq!(
+            parse!("SEQ @3, 32, 1"),
+            i![Seq(p!(@3, 5, 6), p!(32, 9, 11), p!(1, 13, 14))]
+        );
+        assert_eq!(
+            parse!("EQ @3, 32, 1"),
+            i![Seq(p!(@3, 3, 4), p!(32, 8, 10), p!(1, 12, 13))]
+        );
+        assert_eq!(parse!("INCB #hello"), i![Incb(p!(#hello, 6, 12))]);
         assert_eq!(parse!("HALT"), i![Halt]);
     }
 
     #[test]
     fn parse_exprs() {
         let expr_parse = expr();
+
         macro_rules! expr_test {
-            ($expr: literal, $expected: ident) => {
-                let parsed = expr_parse.parse($expr).unwrap();
+            ($expr: literal, $expected: expr) => {
+                let parsed = expr_parse.parse($expr).unwrap().inner;
                 assert_eq!(parsed, $expected, "{{ {} }} != {{ {parsed} }}", $expr);
             };
         }
-        let one = Expr::Number(1);
-        expr_test!("1", one);
 
-        let one = Arc::new(one);
-        let lhs = Arc::clone(&one);
-        let rhs = Arc::clone(&one);
+        expr_test!("1", Expr::Number(1));
+
+        let n0 = Arc::new(spanned!(Expr::Number(1), 0, 1));
+        let n1 = Arc::new(spanned!(Expr::Number(1), 4, 5));
+        let n2 = Arc::new(spanned!(Expr::Number(1), 6, 7));
         let expected = Expr::BinOp {
-            lhs,
-            op: BinOperator::Add,
-            rhs,
+            lhs: Arc::clone(&n0),
+            op: spanned!(BinOperator::Add, 2, 3),
+            rhs: Arc::clone(&n1),
         };
         expr_test!("1 + 1", expected);
 
         let expected = Expr::BinOp {
-            lhs: Arc::new(Expr::BinOp {
-                lhs: Arc::clone(&one),
-                op: BinOperator::Mul,
-                rhs: Arc::clone(&one),
-            }),
-            op: BinOperator::Add,
-            rhs: Arc::clone(&one),
+            lhs: Arc::new(spanned!(
+                Expr::BinOp {
+                    lhs: Arc::clone(&n0),
+                    op: spanned!(BinOperator::Mul, 2, 3),
+                    rhs: Arc::clone(&n1),
+                },
+                0,
+                5
+            )),
+            op: spanned!(BinOperator::Add, 6, 7),
+            rhs: Arc::clone(&n2),
         };
         expr_test!("1 * 1 + 1", expected);
 
-        let expected = Expr::Inner(Arc::new(Expr::UnaryAdd(Arc::new(Expr::Ident("e")))));
+        let expected = Expr::Inner(Arc::new(spanned!(
+            Expr::UnaryAdd(Arc::new(spanned!(Expr::Ident("e"), 2, 3))),
+            0,
+            4
+        )));
         expr_test!("(+e)", expected);
+
+        let lhs = {
+            let lhs = Arc::new(spanned!(Expr::Number(1), 1, 2));
+            let op = spanned!(BinOperator::Add, 3, 4);
+            let mut rhs = Arc::new(spanned!(Expr::Number(1), 7, 8));
+            rhs = Arc::new(spanned!(Expr::Negate(rhs), 6, 7));
+            rhs = Arc::new(spanned!(Expr::UnaryAdd(rhs), 5, 6));
+            Arc::new(spanned!(Expr::BinOp { lhs, op, rhs}, 1, 8))
+        };
+        let rhs = Arc::new(spanned!(Expr::Number(1), 12, 13));
+
         let expected = Expr::BinOp {
-            lhs: Arc::new(Expr::Inner(Arc::new(Expr::BinOp {
-                lhs: Arc::clone(&one),
-                op: BinOperator::Add,
-                rhs: Arc::new(Expr::UnaryAdd(Arc::new(Expr::Negate(Arc::new(
-                    Expr::Ident("e"),
-                ))))),
-            }))),
-            op: BinOperator::Sub,
-            rhs: Arc::clone(&one),
+            lhs,
+            op: spanned!(BinOperator::Sub, 10, 11),
+            rhs,
         };
         expr_test!("(1 + +-e) - 1", expected);
     }

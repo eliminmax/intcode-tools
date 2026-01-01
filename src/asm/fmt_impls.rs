@@ -1,4 +1,4 @@
-// SPDX-FileCopyrightText: 2025 Eli Array Minkoff
+// SPDX-FileCopyrightText: 2025 - 2026 Eli Array Minkoff
 //
 // SPDX-License-Identifier: 0BSD
 
@@ -22,17 +22,19 @@ impl Display for Expr<'_> {
         match self {
             Expr::Number(n) => write!(f, "{n}"),
             Expr::Ident(id) => write!(f, "{id}"),
-            Expr::BinOp { lhs, op, rhs } => write!(f, "{lhs} {op} {rhs}"),
-            Expr::Negate(inner) => write!(f, "-{inner}"),
-            Expr::UnaryAdd(inner) => write!(f, "+{inner}"),
-            Expr::Inner(inner) => write!(f, "({inner})"),
+            Expr::BinOp { lhs, op, rhs } => {
+                write!(f, "{} {} {}", lhs.inner, op.inner, rhs.inner,)
+            }
+            Expr::Negate(e) => write!(f, "-{}", e.inner),
+            Expr::UnaryAdd(e) => write!(f, "+{}", e.inner),
+            Expr::Inner(e) => write!(f, "({})", e.inner),
         }
     }
 }
 
 impl Display for Parameter<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}{}", self.0, self.1)
+        write!(f, "{}{}", self.0, self.1.inner)
     }
 }
 
@@ -59,10 +61,10 @@ impl Display for LineInner<'_> {
             LineInner::DataDirective(exprs) => {
                 write!(f, "DATA ")?;
                 if let Some(expr) = exprs.first() {
-                    write!(f, "{expr}")?;
+                    write!(f, "{}", expr.inner)?;
                 }
                 for expr in &exprs[1..] {
-                    write!(f, ", {expr}")?;
+                    write!(f, ", {}", expr.inner)?;
                 }
                 Ok(())
             }
