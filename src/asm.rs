@@ -1,18 +1,30 @@
 // SPDX-FileCopyrightText: 2025 Eli Array Minkoff
 //
 // SPDX-License-Identifier: GPL-3.0-only
-use chumsky::prelude::*;
-
 use super::ParamMode;
+use chumsky::prelude::*;
+use std::collections::HashMap;
 use std::sync::Arc;
+
 #[cfg_attr(test, derive(PartialEq))]
 #[non_exhaustive]
 #[derive(Debug, Clone)]
 pub enum BinOperator {
-    Add,
-    Sub,
-    Mul,
-    Div,
+    Add = 0,
+    Sub = 1,
+    Mul = 2,
+    Div = 3,
+}
+
+impl BinOperator {
+    const fn apply(self, a: i64, b: i64) -> i64 {
+        match self {
+            BinOperator::Add => a + b,
+            BinOperator::Sub => a - b,
+            BinOperator::Mul => a * b,
+            BinOperator::Div => a / b,
+        }
+    }
 }
 
 #[cfg_attr(test, derive(PartialEq))]
@@ -29,6 +41,33 @@ pub enum Expr<'a> {
     Negate(Arc<Expr<'a>>),
     UnaryAdd(Arc<Expr<'a>>),
     Inner(Arc<Expr<'a>>),
+}
+
+#[derive(Debug)]
+pub enum AssemblyError<'a> {
+    UnresolvedLabel(&'a str),
+    DuplicateLabel(&'a str),
+    WriteToImmediate(Instr<'a>),
+}
+
+impl<'a> Expr<'a> {
+    pub fn resolve(self, labels: &HashMap<&'a str, i64>) -> Result<i64, AssemblyError<'a>> {
+        macro_rules! inner {
+            ($i: ident) => {
+                Arc::unwrap_or_clone($i).resolve(labels)?
+            };
+        }
+        match self {
+            Expr::Number(n) => Ok(n),
+            Expr::Ident(s) => labels
+                .get(s)
+                .copied()
+                .ok_or(AssemblyError::UnresolvedLabel(s)),
+            Expr::BinOp { lhs, op, rhs } => Ok(op.apply(inner!(lhs), inner!(rhs))),
+            Expr::Negate(expr) => Ok(-inner!(expr)),
+            Expr::UnaryAdd(expr) | Expr::Inner(expr) => Ok(inner!(expr)),
+        }
+    }
 }
 
 #[cfg_attr(test, derive(PartialEq))]
@@ -51,6 +90,119 @@ pub enum Instr<'a> {
     Halt = 99,
 }
 
+impl Instr<'_> {
+    pub const fn size(&self) -> i64 {
+        match self {
+            Instr::Halt => 1,
+            Instr::In(..) | Instr::Out(..) | Instr::Incb(..) => 2,
+            Instr::Jnz(..) | Instr::Jz(..) => 3,
+            Instr::Add(..) | Instr::Mul(..) | Instr::Slt(..) | Instr::Seq(..) => 4,
+        }
+    }
+}
+
+// A zero-allocation iterator of instructions 
+enum InstrIter {
+    Four(i64, i64, i64, i64),
+    Three(i64, i64, i64),
+    Two(i64, i64),
+    One(i64),
+    Empty,
+}
+
+impl Iterator for InstrIter {
+    type Item = i64;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            InstrIter::Four(a, b, c, d) => {
+                let a = *a;
+                *self = Self::Three(*b, *c, *d);
+                Some(a)
+            }
+            InstrIter::Three(a, b, c) => {
+                let a = *a;
+                *self = Self::Two(*b, *c);
+                Some(a)
+            }
+            InstrIter::Two(a, b) => {
+                let a = *a;
+                *self = Self::One(*b);
+                Some(a)
+            }
+            InstrIter::One(a) => {
+                let a = *a;
+                *self = Self::Empty;
+                Some(a)
+            }
+            InstrIter::Empty => None,
+        }
+    }
+}
+
+impl<'a> Instr<'a> {
+    pub fn resolve(
+        self,
+        labels: &HashMap<&'a str, i64>,
+    ) -> Result<impl Iterator<Item = i64>, AssemblyError<'a>> {
+        macro_rules! imm_guard {
+            ($mode: ident) => {
+                if $mode == ParamMode::Immediate {
+                    return Err(AssemblyError::WriteToImmediate(self));
+                }
+            };
+        }
+        macro_rules! process_param {
+            ([$param: ident] * $multiplier: literal, &mut $instr: ident) => {{
+                let Parameter(mode, expr) = $param;
+                imm_guard!(mode);
+                $instr += mode as i64 * $multiplier;
+                expr.resolve(labels)?
+            }};
+            ($param: ident * $multiplier: literal, &mut $instr: ident) => {{
+                let Parameter(mode, expr) = $param;
+                $instr += mode as i64 * $multiplier;
+                expr.resolve(labels)?
+            }};
+        }
+
+        macro_rules! process_instr {
+            ($val: literal, $a: tt, $b: tt, $c: tt) => {{
+                let mut instr = $val;
+                let a = process_param!($a * 100, &mut instr);
+                let b = process_param!($b * 1000, &mut instr);
+                let c = process_param!($c * 10000, &mut instr);
+                Ok(InstrIter::Four(instr, a, b, c))
+            }};
+            ($val: literal, $a: tt, $b: tt) => {{
+                let mut instr = $val;
+                let a = process_param!($a * 100, &mut instr);
+                let b = process_param!($b * 1000, &mut instr);
+                Ok(InstrIter::Three(instr, a, b))
+            }};
+            ($val: literal, $a: tt) => {{
+                let mut instr = $val;
+                let a = process_param!($a * 100, &mut instr);
+                Ok(InstrIter::Two(instr, a))
+            }};
+            ($val: literal) => {{ Ok(InstrIter::One($val)) }};
+        }
+
+        match self.clone() {
+            Instr::Add(a, b, c) => process_instr!(1, a, b, [c]),
+            Instr::Mul(a, b, c) => process_instr!(2, a, b, [c]),
+            Instr::In(a) => process_instr!(3, [a]),
+            Instr::Out(a) => process_instr!(4, a),
+            Instr::Jnz(a, b) => process_instr!(5, a, b),
+            Instr::Jz(a, b) => process_instr!(6, a, b),
+            Instr::Slt(a, b, c) => process_instr!(7, a, b, [c]),
+            Instr::Seq(a, b, c) => process_instr!(8, a, b, [c]),
+            Instr::Incb(a) => process_instr!(9, a),
+            Instr::Halt => process_instr!(99),
+        }
+    }
+}
+
 #[cfg_attr(test, derive(PartialEq))]
 #[non_exhaustive]
 #[derive(Debug)]
@@ -67,15 +219,11 @@ pub struct Line<'a> {
 }
 
 macro_rules! padded {
-    ($inner: expr) => {{
-        $inner.padded_by(text::inline_whitespace())
-    }};
+    ($inner: expr) => {{ $inner.padded_by(text::inline_whitespace()) }};
 }
 
 macro_rules! with_sep {
-    ($inner: expr) => {{
-        padded!($inner.then_ignore(text::inline_whitespace().at_least(1)))
-    }};
+    ($inner: expr) => {{ padded!($inner.then_ignore(text::inline_whitespace().at_least(1))) }};
 }
 
 type RichErr<'a> = chumsky::extra::Err<Rich<'a, char>>;
@@ -175,6 +323,17 @@ fn expr<'a>() -> impl Parser<'a, &'a str, Expr<'a>, RichErr<'a>> + Clone {
     })
 }
 
+impl LineInner<'_> {
+    pub fn size(&self) -> i64 {
+        match self {
+            LineInner::DataDirective(exprs) => exprs
+                .len()
+                .try_into()
+                .expect("less than i64::MAX expressions"),
+            LineInner::Instruction(instr) => instr.size(),
+        }
+    }
+}
 fn line_inner<'a>() -> impl Parser<'a, &'a str, Option<LineInner<'a>>, RichErr<'a>> {
     (with_sep!(just("DATA"))
         .ignore_then(expr().separated_by(padded!(just(","))).collect())
@@ -200,10 +359,27 @@ pub fn build_ast<'a>(code: &'a str) -> Result<Vec<Line<'a>>, Vec<Rich<'a, char>>
     grammar().parse(code).into_result()
 }
 
+pub fn assemble_ast<'a>(code: Vec<Line<'a>>) -> Result<Vec<i64>, AssemblyError<'a>> {
+    let mut syms: HashMap<&'a str, i64> = HashMap::new();
+    let mut index = 0;
+    for line in code.iter() {
+        if let Some(label) = line.label
+            && syms.insert(label, index).is_some()
+        {
+            return Err(AssemblyError::DuplicateLabel(label));
+        }
+        if let Some(inner) = line.inner.as_ref() {
+            index += inner.size();
+        }
+    }
+
+    todo!()
+}
+
 mod fmt_impls;
 
 #[cfg(test)]
-mod tests {
+mod ast_tests {
     use super::*;
     #[test]
     fn parse_blank_line() {
