@@ -2,6 +2,8 @@
 //
 // SPDX-License-Identifier: 0BSD
 
+use chumsky::span::Spanned;
+
 use super::{BinOperator, Expr, Instr, Line, LineInner, Parameter};
 
 use std::fmt::{self, Display};
@@ -78,7 +80,7 @@ impl Display for Line<'_> {
         if let Some(label) = self.label {
             write!(f, "{label:<12}")?
         }
-        if let Some(inner) = &self.inner {
+        if let Some(Spanned { inner, .. }) = &self.inner {
             write!(f, "{inner}")?;
         }
         Ok(())

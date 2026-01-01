@@ -220,7 +220,7 @@ pub enum LineInner<'a> {
 #[derive(Debug)]
 pub struct Line<'a> {
     pub label: Option<&'a str>,
-    pub inner: Option<LineInner<'a>>,
+    pub inner: Option<Spanned<LineInner<'a>>>,
 }
 
 macro_rules! padded {
@@ -368,7 +368,7 @@ impl<'a> Line<'a> {
         v: &mut Vec<i64>,
         labels: &HashMap<&'a str, i64>,
     ) -> Result<(), AssemblyError<'a>> {
-        if let Some(inner) = self.inner {
+        if let Some(Spanned { inner, .. }) = self.inner {
             match inner {
                 LineInner::DataDirective(exprs) => {
                     for expr in exprs {
@@ -384,11 +384,12 @@ impl<'a> Line<'a> {
     }
 }
 
-fn line_inner<'a>() -> impl Parser<'a, &'a str, Option<LineInner<'a>>, RichErr<'a>> {
+fn line_inner<'a>() -> impl Parser<'a, &'a str, Option<Spanned<LineInner<'a>>>, RichErr<'a>> {
     (with_sep!(just("DATA"))
         .ignore_then(expr().separated_by(padded!(just(","))).collect())
         .map(LineInner::DataDirective))
     .or(instr().map(LineInner::Instruction))
+    .spanned()
     .or_not()
 }
 

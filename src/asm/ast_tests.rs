@@ -38,20 +38,24 @@ fn parse_blank_line() {
 fn parse_data() {
     assert_eq!(
         line_inner().parse("DATA 1, 1, 1").unwrap(),
-        Some(LineInner::DataDirective(vec![
-            Spanned {
-                inner: Expr::Number(1),
-                span: span!(5, 6)
-            },
-            Spanned {
-                inner: Expr::Number(1),
-                span: span!(8, 9)
-            },
-            Spanned {
-                inner: Expr::Number(1),
-                span: span!(11, 12)
-            },
-        ]))
+        Some(spanned!(
+            LineInner::DataDirective(vec![
+                Spanned {
+                    inner: Expr::Number(1),
+                    span: span!(5, 6)
+                },
+                Spanned {
+                    inner: Expr::Number(1),
+                    span: span!(8, 9)
+                },
+                Spanned {
+                    inner: Expr::Number(1),
+                    span: span!(11, 12)
+                },
+            ]),
+            0,
+            12
+        ))
     );
 }
 
