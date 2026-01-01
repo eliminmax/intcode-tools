@@ -39,8 +39,8 @@ pub struct Parameter<'a>(pub ParamMode, pub Expr<'a>);
 #[derive(Debug, Clone)]
 #[repr(u8)]
 pub enum Instr<'a> {
-    Add(Parameter<'a>, Parameter<'a>) = 1,
-    Mul(Parameter<'a>, Parameter<'a>) = 2,
+    Add(Parameter<'a>, Parameter<'a>, Parameter<'a>) = 1,
+    Mul(Parameter<'a>, Parameter<'a>, Parameter<'a>) = 2,
     In(Parameter<'a>) = 3,
     Out(Parameter<'a>) = 4,
     Jnz(Parameter<'a>, Parameter<'a>) = 5,
@@ -112,8 +112,8 @@ fn instr<'a>() -> impl Parser<'a, &'a str, Instr<'a>, RichErr<'a>> {
     }
 
     padded!(choice((
-        op!("ADD", Add::<2>),
-        op!("MUL", Mul::<2>),
+        op!("ADD", Add::<3>),
+        op!("MUL", Mul::<3>),
         op!("IN", In::<1>),
         op!("OUT", Out::<1>),
         op!("JNZ", Jnz::<2>),
@@ -259,8 +259,8 @@ mod tests {
                 parser.parse($text).unwrap()
             };
         }
-        assert_eq!(parse!("ADD #1, @1"), i![Add(p!(#1), p!(@1))]);
-        assert_eq!(parse!("MUL 3, @20"), i![Mul(p!(3), p!(@20))]);
+        assert_eq!(parse!("ADD #1, @1, 1"), i![Add(p!(#1), p!(@1), p!(1))]);
+        assert_eq!(parse!("MUL 3, @20, e"), i![Mul(p!(3), p!(@20), p!(e))]);
         assert_eq!(parse!("IN #e"), i![In(p!(#e))]);
         assert_eq!(parse!("OUT #5"), i![Out(p!(#5))]);
         assert_eq!(parse!("JNZ @a, #b"), i![Jnz(p!(@a), p!(#b))]);

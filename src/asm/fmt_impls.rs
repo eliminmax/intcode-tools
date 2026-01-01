@@ -35,8 +35,8 @@ impl Display for Parameter<'_> {
 impl Display for Instr<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Instr::Add(a, b) => write!(f, "ADD {a}, {b}"),
-            Instr::Mul(a, b) => write!(f, "MUL {a}, {b}"),
+            Instr::Add(a, b, c) => write!(f, "ADD {a}, {b}, {c}"),
+            Instr::Mul(a, b, c) => write!(f, "MUL {a}, {b}, {c}"),
             Instr::In(a) => write!(f, "IN {a}"),
             Instr::Out(a) => write!(f, "OUT {a}"),
             Instr::Jnz(a, b) => write!(f, "JNZ {a}, {b}"),
