@@ -73,7 +73,7 @@ impl<'a> Expr<'a> {
 
 #[cfg_attr(test, derive(PartialEq))]
 #[derive(Debug, Clone)]
-pub struct Parameter<'a>(pub ParamMode, pub Spanned<Expr<'a>>);
+pub struct Parameter<'a>(pub Spanned<ParamMode>, pub Spanned<Expr<'a>>);
 
 fn unspan<T>(Spanned { inner, .. }: Spanned<T>) -> T {
     inner
@@ -152,7 +152,7 @@ impl<'a> Instr<'a> {
     ) -> Result<impl Iterator<Item = i64>, AssemblyError<'a>> {
         macro_rules! imm_guard {
             ($mode: ident) => {
-                if $mode == ParamMode::Immediate {
+                if $mode.inner == ParamMode::Immediate {
                     return Err(AssemblyError::WriteToImmediate(Box::new(self)));
                 }
             };
@@ -161,12 +161,12 @@ impl<'a> Instr<'a> {
             ([$param: ident] * $multiplier: literal, &mut $instr: ident) => {{
                 let Parameter(mode, expr) = $param;
                 imm_guard!(mode);
-                $instr += mode as i64 * $multiplier;
+                $instr += mode.inner as i64 * $multiplier;
                 unspan(expr).resolve(labels)?
             }};
             ($param: ident * $multiplier: literal, &mut $instr: ident) => {{
                 let Parameter(mode, expr) = $param;
-                $instr += mode as i64 * $multiplier;
+                $instr += mode.inner as i64 * $multiplier;
                 unspan(expr).resolve(labels)?
             }};
         }
@@ -234,11 +234,16 @@ macro_rules! with_sep {
 type RichErr<'a> = chumsky::extra::Err<Rich<'a, char>>;
 
 fn param<'a>() -> impl Parser<'a, &'a str, Parameter<'a>, RichErr<'a>> {
-    padded!(choice((
-        just('@').ignore_then(expr().map(|e| Parameter(ParamMode::Relative, e))),
-        just('#').ignore_then(expr().map(|e| Parameter(ParamMode::Immediate, e))),
-        expr().map(|e| Parameter(ParamMode::Positional, e)),
-    )))
+    padded!(
+        choice((
+            just('#').to(ParamMode::Immediate),
+            just('@').to(ParamMode::Relative),
+            empty().to(ParamMode::Positional),
+        ))
+        .spanned()
+        .then(expr())
+    )
+    .map(|(mode, expr)| Parameter(mode, expr))
 }
 
 fn instr<'a>() -> impl Parser<'a, &'a str, Instr<'a>, RichErr<'a>> {

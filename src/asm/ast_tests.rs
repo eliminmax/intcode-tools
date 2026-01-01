@@ -65,37 +65,37 @@ fn parse_instrs() {
     macro_rules! p {
         (#$e: literal, $start: expr, $end: expr) => {
             Parameter(
-                ParamMode::Immediate,
-                spanned!(Expr::Number($e), $start, $end),
+                spanned!(ParamMode::Immediate, $start, $start + 1),
+                spanned!(Expr::Number($e), $start + 1, $end),
             )
         };
         (@$e: literal, $start: expr, $end: expr) => {
             Parameter(
-                ParamMode::Relative,
-                spanned!(Expr::Number($e), $start, $end),
+                spanned!(ParamMode::Relative, $start, $start + 1),
+                spanned!(Expr::Number($e), $start + 1, $end),
             )
         };
         ($e: literal, $start: expr, $end: expr) => {
             Parameter(
-                ParamMode::Positional,
+                spanned!(ParamMode::Positional, $start, $start),
                 spanned!(Expr::Number($e), $start, $end),
             )
         };
         (#$e: ident, $start: expr, $end: expr) => {
             Parameter(
-                ParamMode::Immediate,
-                spanned!(Expr::Ident(stringify!($e)), $start, $end),
+                spanned!(ParamMode::Immediate, $start, $start + 1),
+                spanned!(Expr::Ident(stringify!($e)), $start + 1, $end),
             )
         };
         (@$e: ident, $start: expr, $end: expr) => {
             Parameter(
-                ParamMode::Relative,
-                spanned!(Expr::Ident(stringify!($e)), $start, $end),
+                spanned!(ParamMode::Relative, $start, $start + 1),
+                spanned!(Expr::Ident(stringify!($e)), $start + 1, $end),
             )
         };
         ($e: ident, $start: expr, $end: expr) => {
             Parameter(
-                ParamMode::Positional,
+                spanned!(ParamMode::Positional, $start, $start),
                 spanned!(Expr::Ident(stringify!($e)), $start, $end),
             )
         };
@@ -111,33 +111,33 @@ fn parse_instrs() {
     }
     assert_eq!(
         parse!("ADD #1, @1, 1"),
-        i![Add(p!(#1, 5, 6), p!(@1, 9, 10), p!(1, 12, 13))]
+        i![Add(p!(#1, 4, 6), p!(@1, 8, 10), p!(1, 12, 13))]
     );
     assert_eq!(
         parse!("MUL 3, @20, e"),
-        i![Mul(p!(3, 4, 5), p!(@20, 8, 10), p!(e, 12, 13))]
+        i![Mul(p!(3, 4, 5), p!(@20, 7, 10), p!(e, 12, 13))]
     );
-    assert_eq!(parse!("IN #e"), i![In(p!(#e, 4, 5))]);
-    assert_eq!(parse!("OUT #5"), i![Out(p!(#5, 5, 6))]);
-    assert_eq!(parse!("JNZ @a, #b"), i![Jnz(p!(@a, 5, 6), p!(#b, 9, 10))]);
-    assert_eq!(parse!("JZ @a, #b"), i![Jz(p!(@a, 4, 5), p!(#b, 8, 9))]);
+    assert_eq!(parse!("IN #e"), i![In(p!(#e, 3, 5))]);
+    assert_eq!(parse!("OUT #5"), i![Out(p!(#5, 4, 6))]);
+    assert_eq!(parse!("JNZ @a, #b"), i![Jnz(p!(@a, 4, 6), p!(#b, 8, 10))]);
+    assert_eq!(parse!("JZ @a, #b"), i![Jz(p!(@a, 3, 5), p!(#b, 7, 9))]);
     assert_eq!(
         parse!("SLT 1,@1, #5"),
-        i![Slt(p!(1, 4, 5), p!(@1, 7, 8), p!(#5, 11, 12))]
+        i![Slt(p!(1, 4, 5), p!(@1, 6, 8), p!(#5, 10, 12))]
     );
     assert_eq!(
         parse!("LT 1,@1, #5"),
-        i![Slt(p!(1, 3, 4), p!(@1, 6, 7), p!(#5, 10, 11))]
+        i![Slt(p!(1, 3, 4), p!(@1, 5, 7), p!(#5, 9, 11))]
     );
     assert_eq!(
         parse!("SEQ @3, 32, 1"),
-        i![Seq(p!(@3, 5, 6), p!(32, 8, 10), p!(1, 12, 13))]
+        i![Seq(p!(@3, 4, 6), p!(32, 8, 10), p!(1, 12, 13))]
     );
     assert_eq!(
         parse!("EQ @3, 32, 1"),
-        i![Seq(p!(@3, 4, 5), p!(32, 7, 9), p!(1, 11, 12))]
+        i![Seq(p!(@3, 3, 5), p!(32, 7, 9), p!(1, 11, 12))]
     );
-    assert_eq!(parse!("INCB #hello"), i![Incb(p!(#hello, 6, 11))]);
+    assert_eq!(parse!("INCB #hello"), i![Incb(p!(#hello, 5, 11))]);
     assert_eq!(parse!("HALT"), i![Halt]);
 }
 
