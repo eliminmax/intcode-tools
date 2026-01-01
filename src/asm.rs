@@ -404,6 +404,11 @@ fn parse_line<'a>() -> impl Parser<'a, &'a str, Line<'a>, RichErr<'a>> {
         .or_not()
         .then(line_inner())
         .map(|(label, inner)| Line { label, inner })
+        .then_ignore(
+            just(';')
+                .then_ignore(text::newline().not().repeated())
+                .or_not(),
+        )
 }
 
 fn grammar<'a>() -> impl Parser<'a, &'a str, Vec<Line<'a>>, RichErr<'a>> {
