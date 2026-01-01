@@ -5,6 +5,7 @@
 //! Library providing an Intcode interpreter, which can be constructed with [`Interpreter::new`].
 //!
 //! # Example
+//!
 //! ```rust
 //! use intcode::{Interpreter, State};
 //! let mut interpreter = Interpreter::new(vec![104, 1024, 99]);
@@ -15,20 +16,20 @@
 //! );
 //! ```
 
+/// A module providing a sort of logical memory management unit, using a hashmap to split memory
+/// into segments, which are each contiguous in memory.
+mod mmu;
+
 use std::error::Error;
 use std::fmt::{self, Display};
 use std::num::TryFromIntError;
 use std::sync::{Arc, Mutex};
-
-/// A sort of logical memory management unit, using a hashmap to split memory into segments, which
-/// are each contiguous in memory.
-mod mmu;
+use std::io;
 
 #[cfg(feature = "asm")]
 pub mod asm;
 
 use mmu::IntcodeMem;
-use std::io;
 
 #[derive(Debug, PartialEq)]
 pub enum State {
