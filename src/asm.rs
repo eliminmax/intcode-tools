@@ -68,7 +68,7 @@
 //!                     inner: ParamMode::Immediate,
 //!                     span: SimpleSpan { start: 14, end: 15, context: () },
 //!                 },
-//!                 Arc::new(Spanned {
+//!                 Box::new(Spanned {
 //!                     inner: Expr::Number(0),
 //!                     span: SimpleSpan { start: 15, end: 16, context: () },
 //!                 }),
@@ -78,7 +78,7 @@
 //!                     inner: ParamMode::Immediate,
 //!                     span: SimpleSpan { start: 18, end: 19, context: () },
 //!                 },
-//!                 Arc::new(Spanned {
+//!                 Box::new(Spanned {
 //!                     inner: Expr::Ident("idle_loop"),
 //!                     span: SimpleSpan { start: 19, end: 28, context: () },
 //!                 }),
@@ -129,7 +129,6 @@ pub mod ast_prelude {
         BinOperator, Directive, Expr, Instr, Line, Parameter, assemble, assemble_ast, build_ast,
     };
     pub use chumsky::span::{SimpleSpan, Spanned};
-    pub use std::sync::Arc;
 }
 
 /// Small utility functions and macros for making it less painful to work with the AST
@@ -155,60 +154,60 @@ pub mod ast_util {
     /// assert_eq!(expr!(e), Expr::Ident("e"));
     /// ```
     ///
-    /// Expressions within expressions can be expressed using the syntax `<expr;>[span]`, which is
+    /// Expressions within expressions can be expressed using the syntax `expr;[span]`, which is
     /// messy, but works around ambiguity about where an expression ends, and allows the span to be
     /// provided, and is overall still far more concise than fully writing it out:
     ///
     /// ```
     ///# use intcode::asm::{ast_prelude::*, ast_util::*};
     /// assert_eq!(
-    ///     expr!( (<expr!(e);>[1..2]) ),
-    ///     Expr::Parenthesized(arc(span(Expr::Ident("e"), 1..2)))
+    ///     expr!( (expr!(e);[1..2]) ),
+    ///     Expr::Parenthesized(boxed(span(Expr::Ident("e"), 1..2)))
     /// );
     /// assert_eq!(
-    ///     expr!(- <expr!(e);>[1..2]),
-    ///     Expr::Negate(arc(span(Expr::Ident("e"), 1..2)))
+    ///     expr!(- expr!(e);[1..2]),
+    ///     Expr::Negate(boxed(span(Expr::Ident("e"), 1..2)))
     /// );
     /// assert_eq!(
-    ///     expr!(<expr!(1);>[0..1] +[2..3] <expr!(1);>[4..5]),
+    ///     expr!(expr!(1);[0..1] +[2..3] expr!(1);[4..5]),
     ///     Expr::BinOp {
-    ///         lhs: arc(span(Expr::Number(1), 0..1)),
+    ///         lhs: boxed(span(Expr::Number(1), 0..1)),
     ///         op: span(BinOperator::Add, 2..3),
-    ///         rhs: arc(span(Expr::Number(1), 4..5)),
+    ///         rhs: boxed(span(Expr::Number(1), 4..5)),
     ///     }
     /// );
     /// ```
     ///
     #[macro_export]
     macro_rules! expr {
-        (+ <$e:expr;>[$span: expr]) => {{
-            ::intcode::asm::Expr::UnaryAdd(
-                ::std::sync::Arc::new(
-                    ::intcode::asm::ast_util::span($e, $span)
+        (+ $e:expr;[$span: expr]) => {{
+            $crate::asm::Expr::UnaryAdd(
+                ::std::boxed::Box::new(
+                    $crate::asm::ast_util::span($e, $span)
                 )
             )
         }};
-        (- <$e:expr;>[$span: expr]) => {{
-            ::intcode::asm::Expr::Negate(Arc::new(::intcode::asm::ast_util::span($e, $span)))
+        (- $e:expr;[$span: expr]) => {{
+            $crate::asm::Expr::Negate(Box::new($crate::asm::ast_util::span($e, $span)))
         }};
-        ($i:ident) => {{ ::intcode::asm::Expr::Ident(stringify!($i)) }};
-        ($n:literal) => {{ ::intcode::asm::Expr::Number($n) }};
-        ( (<$e:expr;>[$span: expr]) ) => {{
-            ::intcode::asm::Expr::Parenthesized(
-                ::std::sync::Arc::new(::intcode::asm::ast_util::span($e, $span))
+        ($i:ident) => {{ $crate::asm::Expr::Ident(stringify!($i)) }};
+        ($n:literal) => {{ $crate::asm::Expr::Number($n) }};
+        ( ($e:expr;[$span: expr]) ) => {{
+            $crate::asm::Expr::Parenthesized(
+                ::std::boxed::Box::new($crate::asm::ast_util::span($e, $span))
             )
         }};
-        (<$l:expr;>[$span_l:expr] $op:tt[$span_op:expr] <$r:expr;>[$span_r:expr]) => {{
+        ($l:expr;[$span_l:expr] $op:tt[$span_op:expr] $r:expr;[$span_r:expr]) => {{
             macro_rules! op {
-                [+] => {{ ::intcode::asm::BinOperator::Add }};
-                [-] => {{ ::intcode::asm::BinOperator::Sub }};
-                [*] => {{ ::intcode::asm::BinOperator::Mul }};
-                [/] => {{ ::intcode::asm::BinOperator::Div }};
+                [+] => {{ $crate::asm::BinOperator::Add }};
+                [-] => {{ $crate::asm::BinOperator::Sub }};
+                [*] => {{ $crate::asm::BinOperator::Mul }};
+                [/] => {{ $crate::asm::BinOperator::Div }};
             }
-            ::intcode::asm::Expr::BinOp {
-                lhs: ::std::sync::Arc::new(::intcode::asm::ast_util::span($l, $span_l)),
-                op: ::intcode::asm::ast_util::span(op![$op], $span_op),
-                rhs: ::std::sync::Arc::new(::intcode::asm::ast_util::span($r, $span_r)),
+            $crate::asm::Expr::BinOp {
+                lhs: ::std::boxed::Box::new($crate::asm::ast_util::span($l, $span_l)),
+                op: $crate::asm::ast_util::span(op![$op], $span_op),
+                rhs: ::std::boxed::Box::new($crate::asm::ast_util::span($r, $span_r)),
             }
         }};
     }
@@ -222,40 +221,40 @@ pub mod ast_util {
     /// use intcode::asm::{ast_prelude::*, ast_util::*};
     /// assert_eq!(
     ///     param!(@<expr!(0);>[0..2]),
-    ///     Parameter(span(ParamMode::Relative, 0..1), arc(span(Expr::Number(0), 1..2)))
+    ///     Parameter(span(ParamMode::Relative, 0..1), boxed(span(Expr::Number(0), 1..2)))
     /// );
     /// ```
     #[macro_export]
     macro_rules! param {
         (@ <$e: expr;>[$span: expr]) => {{
-            ::intcode::asm::Parameter(
-                ::intcode::asm::ast_util::span(
-                    ::intcode::ParamMode::Relative,
+            $crate::asm::Parameter(
+                $crate::asm::ast_util::span(
+                    $crate::ParamMode::Relative,
                     ($span.start)..($span.start + 1)
                 ),
-                ::std::sync::Arc::new(::intcode::asm::ast_util::span(
+                ::std::boxed::Box::new($crate::asm::ast_util::span(
                     $e, ($span.start + 1)..($span.end)
                 ))
             )
         }};
         (# <$e: expr;>[$span: expr]) => {{
-            ::intcode::asm::Parameter(
-                ::intcode::asm::ast_util::span(
-                    ::intcode::ParamMode::Immediate,
+            $crate::asm::Parameter(
+                $crate::asm::ast_util::span(
+                    $crate::ParamMode::Immediate,
                     ($span.start)..($span.start + 1)
                 ),
-                ::std::sync::Arc::new(::intcode::asm::ast_util::span(
+                ::std::boxed::Box::new($crate::asm::ast_util::span(
                     $e, ($span.start + 1)..($span.end)
                 ))
             )
         }};
         (<$e: expr;>[$span: expr]) => {{
-            ::intcode::asm::Parameter(
-                ::intcode::asm::ast_util::span(
-                    ::intcode::ParamMode::Positional,
+            $crate::asm::Parameter(
+                $crate::asm::ast_util::span(
+                    $crate::ParamMode::Positional,
                     ($span.start)..($span.start)
                 ),
-                ::std::sync::Arc::new(::intcode::asm::ast_util::span($e, $span))
+                ::std::boxed::Box::new($crate::asm::ast_util::span($e, $span))
             )
         }};
     }
@@ -280,15 +279,9 @@ pub mod ast_util {
     }
 
     #[inline]
-    /// Move `inner` into an [`Arc`]
-    pub fn arc<T>(inner: T) -> Arc<T> {
-        Arc::new(inner)
-    }
-
-    #[inline]
-    /// get an owned version of the contents of an [`Arc`]
-    pub fn unarc<T: Clone>(arc: Arc<T>) -> T {
-        Arc::unwrap_or_clone(arc)
+    /// Move `inner` into a [`Box`]
+    pub fn boxed<T>(inner: T) -> Box<T> {
+        Box::new(inner)
     }
 }
 
@@ -377,23 +370,23 @@ pub enum Expr<'a> {
     /// a binary operation
     BinOp {
         /// the left-hand-side expression
-        lhs: Arc<Spanned<Expr<'a>>>,
+        lhs: Box<Spanned<Expr<'a>>>,
         /// the operation to perform
         op: Spanned<BinOperator>,
         /// the right-hand-side expression
-        rhs: Arc<Spanned<Expr<'a>>>,
+        rhs: Box<Spanned<Expr<'a>>>,
     },
     /// the negation of the inner expression
-    Negate(Arc<Spanned<Expr<'a>>>),
+    Negate(Box<Spanned<Expr<'a>>>),
     #[doc(hidden)]
     /// A unary plus sign, which evaluates to the value of its right-hand side. It's defined for
     /// compatibility with the [proposed assembly syntax] from the Esolangs Community Wiki, but
     /// has no use that I can see.
     ///
     /// [proposed assembly syntax]: <https://esolangs.org/wiki/Intcode#Proposed_Assembly_Syntax>
-    UnaryAdd(Arc<Spanned<Expr<'a>>>),
+    UnaryAdd(Box<Spanned<Expr<'a>>>),
     /// an inner expression in parentheses
-    Parenthesized(Arc<Spanned<Expr<'a>>>),
+    Parenthesized(Box<Spanned<Expr<'a>>>),
 }
 
 /// An error that occured while trying to generate the intcode from the AST.
@@ -414,7 +407,7 @@ impl<'a> Expr<'a> {
     pub fn resolve(self, labels: &HashMap<&'a str, i64>) -> Result<i64, AssemblyError<'a>> {
         macro_rules! inner {
             ($i: ident) => {
-                Arc::unwrap_or_clone($i).inner.resolve(labels)?
+                $i.inner.resolve(labels)?
             };
         }
         match self {
@@ -432,7 +425,7 @@ impl<'a> Expr<'a> {
 
 #[derive(Debug, Clone, PartialEq)]
 /// A simple tuple struct containing the parameter mode and the expression for the parameter
-pub struct Parameter<'a>(pub Spanned<ParamMode>, pub Arc<Spanned<Expr<'a>>>);
+pub struct Parameter<'a>(pub Spanned<ParamMode>, pub Box<Spanned<Expr<'a>>>);
 
 fn unspan<T>(Spanned { inner, .. }: Spanned<T>) -> T {
     inner
@@ -590,7 +583,7 @@ impl<'a> Instr<'a> {
             ($param: ident * $multiplier: literal, &mut $instr: ident) => {{
                 let Parameter(mode, expr) = $param;
                 $instr += mode.inner as i64 * $multiplier;
-                unspan(Arc::unwrap_or_clone(expr)).resolve(labels)?
+                unspan(*expr).resolve(labels)?
             }};
         }
 
@@ -676,7 +669,7 @@ fn param<'a>() -> impl Parser<'a, &'a str, Parameter<'a>, RichErr<'a>> {
         .spanned()
         .then(expr())
     )
-    .map(|(mode, expr)| Parameter(mode, Arc::new(expr)))
+    .map(|(mode, expr)| Parameter(mode, Box::new(expr)))
 }
 
 fn mnemonic<'a>(kw: &'static str) -> impl Parser<'a, &'a str, (), RichErr<'a>> {
@@ -739,7 +732,7 @@ fn expr<'a>() -> impl Parser<'a, &'a str, Spanned<Expr<'a>>, RichErr<'a>> + Clon
         let ident = text::ident().map(|s: &str| Expr::Ident(s));
         let bracketed = expr
             .delimited_by(just('('), just(')'))
-            .map(|e| Expr::Parenthesized(Arc::new(e)));
+            .map(|e| Expr::Parenthesized(Box::new(e)));
         let atom = int.or(ident).or(bracketed).spanned();
         let unary = padded!(one_of("-+").spanned()).repeated().foldr(
             atom,
@@ -747,8 +740,8 @@ fn expr<'a>() -> impl Parser<'a, &'a str, Spanned<Expr<'a>>, RichErr<'a>> + Clon
                 span.end = rhs.span.end;
                 Spanned {
                     inner: match inner {
-                        '+' => Expr::UnaryAdd(Arc::new(rhs)),
-                        '-' => Expr::Negate(Arc::new(rhs)),
+                        '+' => Expr::UnaryAdd(Box::new(rhs)),
+                        '-' => Expr::Negate(Box::new(rhs)),
                         _ => unreachable!(),
                     },
                     span,
@@ -764,9 +757,9 @@ fn expr<'a>() -> impl Parser<'a, &'a str, Spanned<Expr<'a>>, RichErr<'a>> + Clon
                 context: (),
             };
             let inner = Expr::BinOp {
-                lhs: Arc::new(lhs),
+                lhs: Box::new(lhs),
                 op,
-                rhs: Arc::new(rhs),
+                rhs: Box::new(rhs),
             };
             Spanned { span, inner }
         };

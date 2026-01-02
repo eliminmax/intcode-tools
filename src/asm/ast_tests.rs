@@ -2,26 +2,8 @@
 //
 // SPDX-License-Identifier: 0BSD
 
+use super::ast_util::*;
 use super::*;
-
-macro_rules! span {
-    ($start: expr, $end: expr) => {
-        SimpleSpan {
-            start: $start,
-            end: $end,
-            context: (),
-        }
-    };
-}
-
-macro_rules! spanned {
-    ($inner: expr, $start: expr, $end: expr) => {
-        Spanned {
-            inner: $inner,
-            span: span!($start, $end),
-        }
-    };
-}
 
 #[test]
 fn parse_blank_line() {
@@ -38,23 +20,13 @@ fn parse_blank_line() {
 fn parse_data() {
     assert_eq!(
         line_inner().parse("DATA 1, 1, 1").unwrap(),
-        Some(spanned!(
+        Some(span(
             Directive::DataDirective(vec![
-                Spanned {
-                    inner: Expr::Number(1),
-                    span: span!(5, 6)
-                },
-                Spanned {
-                    inner: Expr::Number(1),
-                    span: span!(8, 9)
-                },
-                Spanned {
-                    inner: Expr::Number(1),
-                    span: span!(11, 12)
-                },
+                span(expr!(1), 5..6),
+                span(expr!(1), 8..9),
+                span(expr!(1), 11..12),
             ]),
-            0,
-            12
+            0..12
         ))
     );
 }
@@ -63,41 +35,11 @@ fn parse_data() {
 fn parse_instrs() {
     let parser = instr();
     macro_rules! p {
-        (#$e: literal, $start: expr, $end: expr) => {
-            Parameter(
-                spanned!(ParamMode::Immediate, $start, $start + 1),
-                Arc::new(spanned!(Expr::Number($e), $start + 1, $end)),
-            )
+        ($t: tt $e: tt, $start: expr, $end: expr) => {
+            param!($t <expr!($e);>[$start..$end])
         };
-        (@$e: literal, $start: expr, $end: expr) => {
-            Parameter(
-                spanned!(ParamMode::Relative, $start, $start + 1),
-                Arc::new(spanned!(Expr::Number($e), $start + 1, $end)),
-            )
-        };
-        ($e: literal, $start: expr, $end: expr) => {
-            Parameter(
-                spanned!(ParamMode::Positional, $start, $start),
-                Arc::new(spanned!(Expr::Number($e), $start, $end)),
-            )
-        };
-        (#$e: ident, $start: expr, $end: expr) => {
-            Parameter(
-                spanned!(ParamMode::Immediate, $start, $start + 1),
-                Arc::new(spanned!(Expr::Ident(stringify!($e)), $start + 1, $end)),
-            )
-        };
-        (@$e: ident, $start: expr, $end: expr) => {
-            Parameter(
-                spanned!(ParamMode::Relative, $start, $start + 1),
-                Arc::new(spanned!(Expr::Ident(stringify!($e)), $start + 1, $end)),
-            )
-        };
-        ($e: ident, $start: expr, $end: expr) => {
-            Parameter(
-                spanned!(ParamMode::Positional, $start, $start),
-                Arc::new(spanned!(Expr::Ident(stringify!($e)), $start, $end)),
-            )
+        ($e: tt, $start: expr, $end: expr) => {
+            param!(<expr!($e);>[$start..$end])
         };
     }
     macro_rules! i {
@@ -152,56 +94,43 @@ fn parse_exprs() {
         };
     }
 
-    expr_test!("1", Expr::Number(1));
+    expr_test!("1", expr!(1));
 
-    let n0 = Arc::new(spanned!(Expr::Number(1), 0, 1));
-    let n1 = Arc::new(spanned!(Expr::Number(1), 4, 5));
-    let n2 = Arc::new(spanned!(Expr::Number(1), 8, 9));
-    let expected = Expr::BinOp {
-        lhs: Arc::clone(&n0),
-        op: spanned!(BinOperator::Add, 2, 3),
-        rhs: Arc::clone(&n1),
-    };
-    expr_test!("1 + 1", expected);
+    expr_test!(
+        "1 + 1",
+        expr!(
+            expr!(1);[0..1] +[2..3] expr!(1);[4..5]
+        )
+    );
 
-    let expected = Expr::BinOp {
-        lhs: Arc::new(spanned!(
-            Expr::BinOp {
-                lhs: Arc::clone(&n0),
-                op: spanned!(BinOperator::Mul, 2, 3),
-                rhs: Arc::clone(&n1),
-            },
-            0,
-            5
-        )),
-        op: spanned!(BinOperator::Add, 6, 7),
-        rhs: Arc::clone(&n2),
-    };
-    expr_test!("1 * 1 + 1", expected);
+    expr_test!(
+        "1 * 1 + 1",
+        expr!(
+            expr!(
+                expr!(1);[0..1] *[2..3] expr!(1);[4..5]
+            );[0..5]
+            +[6..7]
+            expr!(1);[8..9]
+        )
+    );
 
-    let mut expected = Expr::Ident("e");
-    expected = Expr::UnaryAdd(Arc::new(spanned!(expected, 2, 3)));
-    expected = Expr::Parenthesized(Arc::new(spanned!(expected, 1, 3)));
+    let expected = expr!( (expr!(+expr!(e);[2..3]);[1..3]) );
     expr_test!("(+e)", expected);
 
-    let lhs = Arc::new(spanned!(
-        Expr::Parenthesized({
-            let lhs = Arc::new(spanned!(Expr::Number(1), 1, 2));
-            let op = spanned!(BinOperator::Add, 3, 4);
-            let mut rhs = Arc::new(spanned!(Expr::Ident("e"), 7, 8));
-            rhs = Arc::new(spanned!(Expr::Negate(rhs), 6, 8));
-            rhs = Arc::new(spanned!(Expr::UnaryAdd(rhs), 5, 8));
-            Arc::new(spanned!(Expr::BinOp { lhs, op, rhs }, 1, 8))
-        }),
-        0,
-        9
-    ));
-    let rhs = Arc::new(spanned!(Expr::Number(1), 12, 13));
-
-    let expected = Expr::BinOp {
-        lhs,
-        op: spanned!(BinOperator::Sub, 10, 11),
-        rhs,
-    };
+    let expected = expr!(
+        expr!((
+            expr!(
+                expr!(1);[1..2]
+                +[3..4]
+                expr!(
+                    +expr!(
+                        - expr!(e);[7..8]
+                    );[6..8]
+                );[5..8]
+            );[1..8]
+        ));[0..9]
+        -[10..11]
+        expr!(1);[12..13]
+    );
     expr_test!("(1 + +-e) - 1", expected);
 }
