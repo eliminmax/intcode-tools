@@ -11,7 +11,7 @@
 //! # Example
 //!
 //! ```rust
-//! use intcode::{Interpreter, State};
+//! use intcode::prelude::*;
 //! let mut interpreter = Interpreter::new(vec![104, 1024, 99]);
 //!
 //! assert_eq!(
@@ -26,7 +26,7 @@
 //! # Example
 //!
 //! ```rust
-//! use intcode::{Interpreter, State, asm::assemble};
+//! use intcode::{prelude::*, asm::assemble};
 //! const ASM: &str = r#"
 //! OUT #1024
 //! HALT
@@ -44,6 +44,8 @@
 //!
 //! ```
 //!
+//! See the docs for the [asm] module for more complex examples.
+//!
 //! [Opcodes]: https://esolangs.org/wiki/Intcode#Opcodes
 //! [Parameter Modes]: https://esolangs.org/wiki/Intcode#Parameter_Modes
 //! [Day 9]: https://adventofcode.com/2019/day/9
@@ -57,6 +59,11 @@ use std::fmt::{self, Display};
 use std::io;
 use std::num::TryFromIntError;
 use std::sync::{Arc, Mutex};
+
+/// A small module that re-exports items needed when working with the Intcode interpreter
+pub mod prelude {
+    pub use crate::{Interpreter, State};
+}
 
 #[cfg(feature = "asm")]
 pub mod asm;

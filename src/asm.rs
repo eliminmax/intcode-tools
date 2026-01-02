@@ -28,7 +28,7 @@
 //! # Example
 //!
 //! ```
-//! use intcode::{Interpreter, State};
+//! use intcode::prelude::*;
 //! use intcode::asm::assemble;
 //! const HELLO_ASM: &str = r#"
 //! ; A simple Hello World program
@@ -54,9 +54,7 @@
 //!
 //! # Example
 //! ```
-//! use intcode::{Interpreter, State, ParamMode, asm::*};
-//! use chumsky::prelude::{Spanned, SimpleSpan};
-//! use std::sync::Arc;
+//! use intcode::{prelude::*, asm::ast_prelude::*};
 //!
 //! let ast = build_ast("idle_loop: JZ #0, #idle_loop").unwrap();
 //! let expected = vec![Line {
@@ -101,6 +99,17 @@ use chumsky::prelude::*;
 use chumsky::text::Char;
 use std::collections::HashMap;
 use std::sync::Arc;
+
+/// a small module that re-exports the types needed to work with the AST of the assembly language.
+pub mod ast_prelude {
+    pub use crate::{ParamMode, asm};
+    pub use std::sync::Arc;
+    pub use chumsky::span::{Spanned, SimpleSpan};
+    pub use asm::{
+        assemble, assemble_ast, build_ast,
+        Line, Directive, Instr, Parameter, Expr, BinOperator,
+    };
+}
 
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
