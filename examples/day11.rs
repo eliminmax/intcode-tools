@@ -8,7 +8,6 @@ use intcode::prelude::*;
 
 use std::collections::HashMap;
 
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum PanelColor {
     Black { repainted: bool },
@@ -162,4 +161,3 @@ impl Default for PanelColor {
         Self::Black { repainted: false }
     }
 }
-
