@@ -238,18 +238,33 @@ pub enum Expr<'a> {
 #[derive(Debug)]
 pub enum AssemblyError<'a> {
     /// An expresison used a label that could not be resolved
-    UnresolvedLabel(&'a str),
+    UnresolvedLabel {
+        /// The unresolved label
+        label: &'a str,
+        /// The span within the input of the unresolved label
+        span: SimpleSpan,
+    },
     /// A label was defined more than once
-    DuplicateLabel(&'a str),
+    DuplicateLabel {
+        /// The duplicated label
+        label: &'a str,
+        /// The spans of the new and old definitions of the label
+        spans: [SimpleSpan; 2],
+    },
     /// A directive resolved to more than [`i64::MAX`] ints, and somehow didn't crash your computer
     /// before it was time to size things up
-    TooLarge(usize),
+    DirectiveTooLarge {
+        /// The output size of the directive
+        size: usize,
+        /// The span within the input of the directive
+        span: SimpleSpan
+    }
 }
 
 impl<'a> Expr<'a> {
     /// Given a mapping of labels to indexes, try to resolve into a concrete value.
     /// If a label can't be resolved, it will return that label
-    pub fn resolve(self, labels: &HashMap<&'a str, i64>) -> Result<i64, AssemblyError<'a>> {
+    pub fn resolve(self, labels: &HashMap<&'a str, i64>) -> Result<i64, &'a str> {
         macro_rules! inner {
             ($i: ident) => {
                 $i.inner.resolve(labels)?
@@ -257,10 +272,7 @@ impl<'a> Expr<'a> {
         }
         match self {
             Expr::Number(n) => Ok(n),
-            Expr::Ident(s) => labels
-                .get(s)
-                .copied()
-                .ok_or(AssemblyError::UnresolvedLabel(s)),
+            Expr::Ident(s) => labels.get(s).copied().ok_or(s),
             Expr::BinOp { lhs, op, rhs } => Ok(op.inner.apply(inner!(lhs), inner!(rhs))),
             Expr::Negate(expr) => Ok(-inner!(expr)),
             Expr::UnaryAdd(expr) | Expr::Parenthesized(expr) => Ok(inner!(expr)),
@@ -441,7 +453,9 @@ impl<'a> Instr<'a> {
             ($param: ident * $multiplier: literal, &mut $instr: ident) => {{
                 let Parameter(mode, expr) = $param;
                 $instr += mode as i64 * $multiplier;
-                unspan(*expr).resolve(labels)?
+                let Spanned { inner: expr, span } = *expr;
+                expr.resolve(labels)
+                    .map_err(|label| AssemblyError::UnresolvedLabel { label, span })?
             }};
         }
 
@@ -483,7 +497,7 @@ impl<'a> Instr<'a> {
 }
 
 #[non_exhaustive]
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 /// The directive of a line
 ///
 /// This is what actually gets output into the program
@@ -529,7 +543,11 @@ impl<'a> Line<'a> {
             match inner {
                 Directive::DataDirective(exprs) => {
                     for expr in exprs {
-                        v.push(unspan(expr).resolve(labels)?);
+                        let Spanned { inner: expr, span } = expr;
+                        v.push(
+                            expr.resolve(labels)
+                                .map_err(|label| AssemblyError::UnresolvedLabel { label, span })?,
+                        );
                     }
                 }
                 Directive::Ascii(text) => v.extend(unspan(text).into_iter().map(i64::from)),
@@ -585,18 +603,28 @@ pub fn build_ast<'a>(code: &'a str) -> Result<Vec<Line<'a>>, Vec<Rich<'a, char>>
 /// assert_eq!(assemble_ast(ast).unwrap(), vec![99]);
 /// ```
 pub fn assemble_ast<'a>(code: Vec<Line<'a>>) -> Result<Vec<i64>, AssemblyError<'a>> {
-    let mut labels: HashMap<&'a str, i64> = HashMap::new();
+    let mut labels: HashMap<&'a str, (i64, SimpleSpan)> = HashMap::new();
     let mut index = 0;
     for line in code.iter() {
-        if let Some(Spanned { inner: label, .. }) = line.label
-            && labels.insert(label, index).is_some()
+        if let Some(Spanned { inner: label, span }) = line.label
+            && let Some((_, old_span)) = labels.insert(label, (index, span))
         {
-            return Err(AssemblyError::DuplicateLabel(label));
+            return Err(AssemblyError::DuplicateLabel {
+                label,
+                spans: [old_span, span],
+            });
         }
         if let Some(inner) = line.inner.as_ref() {
-            index += inner.size().map_err(AssemblyError::TooLarge)?;
+            index += inner
+                .size()
+                .map_err(|size| AssemblyError::DirectiveTooLarge{ size, span: inner.span })?;
         }
     }
+
+    let labels = labels
+        .into_iter()
+        .map(|(label, (index, _span))| (label, index))
+        .collect();
 
     let mut v = Vec::with_capacity(index.try_into().unwrap_or_default());
 

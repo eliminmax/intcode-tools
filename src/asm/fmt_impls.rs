@@ -93,13 +93,17 @@ impl Display for Line<'_> {
 impl Display for AssemblyError<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AssemblyError::UnresolvedLabel(l) => write!(f, "unresolved label: {l:?}"),
-            AssemblyError::DuplicateLabel(l) => write!(f, "duplicate label: {l:?}"),
-            AssemblyError::TooLarge(d) => write!(
-                f,
-                "directive too large: size {d} is more than maximum {}",
-                i64::MAX
-            ),
+            AssemblyError::UnresolvedLabel { label, .. } => {
+                write!(f, "unresolved label: {label:?}")
+            }
+            AssemblyError::DuplicateLabel { label, .. } => write!(f, "duplicate label: {label:?}"),
+            AssemblyError::DirectiveTooLarge { size, .. } => {
+                write!(
+                    f,
+                    "directive too large: size {size} is more than maximum {}",
+                    i64::MAX
+                )
+            }
         }
     }
 }
