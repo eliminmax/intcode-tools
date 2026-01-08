@@ -61,10 +61,10 @@
 //! let expected = vec![Line {
 //!     label: Some(Spanned {
 //!         inner: "idle_loop",
-//!         span: SimpleSpan { start: 0, end: 10, context: () },
+//!         span: SimpleSpan { start: 0, end: 9, context: () },
 //!     }),
 //!     inner: Some(Spanned {
-//!         span: SimpleSpan { start: 10, end: 28, context: () },
+//!         span: SimpleSpan { start: 11, end: 28, context: () },
 //!         inner: Directive::Instruction(Box::new(Instr::Jz(
 //!             Parameter (
 //!                 ParamMode::Immediate,
@@ -96,13 +96,13 @@
 //! use intcode::asm::ast_util::*;
 //! let ast = build_ast("idle_loop: JZ #0, #idle_loop").unwrap();
 //! let expected = vec![Line {
-//!     label: Some(span("idle_loop", 0..10)),
+//!     label: Some(span("idle_loop", 0..9)),
 //!     inner: Some(span(
 //!         Directive::Instruction(Box::new(Instr::Jz(
 //!             param!(#<expr!(0);>[14..16]),
 //!             param!(#<expr!(idle_loop);>[18..28])
 //!         ))),
-//!         10..28
+//!         11..28
 //!     ))
 //! }];
 //!
@@ -257,8 +257,8 @@ pub enum AssemblyError<'a> {
         /// The output size of the directive
         size: usize,
         /// The span within the input of the directive
-        span: SimpleSpan
-    }
+        span: SimpleSpan,
+    },
 }
 
 impl<'a> Expr<'a> {
@@ -617,7 +617,10 @@ pub fn assemble_ast<'a>(code: Vec<Line<'a>>) -> Result<Vec<i64>, AssemblyError<'
         if let Some(inner) = line.inner.as_ref() {
             index += inner
                 .size()
-                .map_err(|size| AssemblyError::DirectiveTooLarge{ size, span: inner.span })?;
+                .map_err(|size| AssemblyError::DirectiveTooLarge {
+                    size,
+                    span: inner.span,
+                })?;
         }
     }
 

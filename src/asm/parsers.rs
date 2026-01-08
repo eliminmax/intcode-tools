@@ -11,21 +11,31 @@ macro_rules! padded {
 }
 
 macro_rules! with_sep {
-    ($inner: expr) => {{ padded!($inner.then_ignore(text::inline_whitespace().at_least(1))) }};
+    ($inner: expr) => {{ $inner.then_ignore(text::inline_whitespace().at_least(1)) }};
 }
 
 type RichErr<'a> = chumsky::extra::Err<Rich<'a, char>>;
 
+fn comma_delimiter<'a>() -> impl Parser<'a, &'a str, (), RichErr<'a>> {
+    padded!(just(',')).ignored().labelled("comma delimiter")
+}
+
 fn param<'a>() -> impl Parser<'a, &'a str, Parameter<'a>, RichErr<'a>> {
     padded!(
         choice((
-            just('#').to(ParamMode::Immediate),
-            just('@').to(ParamMode::Relative),
+            just('#')
+                .to(ParamMode::Immediate)
+                .labelled("immediate mode prefix ('#')"),
+            just('@')
+                .to(ParamMode::Relative)
+                .labelled("relative mode prefix ('@')"),
             empty().to(ParamMode::Positional),
         ))
         .then(expr())
     )
     .map(|(mode, expr)| Parameter(mode, Box::new(expr)))
+    .labelled("parameter")
+    .as_context()
 }
 
 fn mnemonic<'a>(kw: &'static str) -> impl Parser<'a, &'a str, (), RichErr<'a>> {
@@ -42,22 +52,28 @@ fn instr<'a>() -> impl Parser<'a, &'a str, Instr<'a>, RichErr<'a>> {
     macro_rules! params {
         ($n: literal) => {{
             param()
-                .separated_by(padded!(just(',')))
+                .separated_by(comma_delimiter())
                 .exactly($n)
+                .allow_trailing()
                 .collect::<Vec<_>>()
                 .map(|v| <[Parameter; $n]>::try_from(v).expect("sized"))
         }};
     }
     macro_rules! op {
         ($name: literal, $variant: ident::<1>) => {
-            with_sep!(mnemonic($name)).ignore_then(param().map(Instr::$variant))
+            padded!(mnemonic($name).labelled($name))
+                .ignore_then(param().map(Instr::$variant))
+                .labelled(concat!($name, " instruction parameter"))
         };
         ($name: literal, $variant: ident::<2>) => {
-            with_sep!(mnemonic($name)).ignore_then((params!(2)).map(|[a, b]| Instr::$variant(a, b)))
+            padded!(mnemonic($name).labelled($name))
+                .ignore_then((params!(2)).map(|[a, b]| Instr::$variant(a, b)))
+                .labelled(concat!("2 ", $name, " instruction parameters"))
         };
         ($name: literal, $variant: ident::<3>) => {
-            with_sep!(mnemonic($name))
+            padded!(mnemonic($name).labelled($name))
                 .ignore_then((params!(3)).map(|[a, b, c]| Instr::$variant(a, b, c)))
+                .labelled(concat!("3 ", $name, " instruction parameters"))
         };
     }
 
@@ -74,36 +90,46 @@ fn instr<'a>() -> impl Parser<'a, &'a str, Instr<'a>, RichErr<'a>> {
         op!("SEQ", Eq::<3>),
         op!("RBO", Rbo::<1>),
         op!("INCB", Rbo::<1>),
-        just("HALT").to(Instr::Halt),
+        just("HALT").to(Instr::Halt).labelled("HALT"),
     )))
+    .labelled("instruction")
+    .as_context()
 }
 
 fn expr<'a>() -> impl Parser<'a, &'a str, Spanned<Expr<'a>>, RichErr<'a>> + Clone {
     recursive(|expr| {
-        let int = text::int(10).try_map(|s: &str, span| {
-            s.parse::<i64>()
-                .map(Expr::Number)
-                .map_err(|e| Rich::custom(span, format!("error parsing {s} as i64: {e}")))
-        });
-        let ident = text::ident().map(|s: &str| Expr::Ident(s));
+        let int = text::int(10)
+            .try_map(|s: &str, span| {
+                s.parse::<i64>()
+                    .map(Expr::Number)
+                    .map_err(|e| Rich::custom(span, format!("error parsing {s} as i64: {e}")))
+            })
+            .labelled("integer literal");
+        let ident = text::ident()
+            .map(|s: &str| Expr::Ident(s))
+            .labelled("label");
         let bracketed = expr
             .delimited_by(just('('), just(')'))
-            .map(|e| Expr::Parenthesized(Box::new(e)));
+            .map(|e| Expr::Parenthesized(Box::new(e)))
+            .labelled("bracketed expression");
         let atom = int.or(ident).or(bracketed).spanned();
-        let unary = padded!(one_of("-+").spanned()).repeated().foldr(
-            atom,
-            |Spanned { inner, mut span }: Spanned<char>, rhs: Spanned<Expr<'a>>| {
-                span.end = rhs.span.end;
-                Spanned {
-                    inner: match inner {
-                        '+' => Expr::UnaryAdd(Box::new(rhs)),
-                        '-' => Expr::Negate(Box::new(rhs)),
-                        _ => unreachable!(),
-                    },
-                    span,
-                }
-            },
-        );
+        let unary = padded!(one_of("-+").spanned())
+            .repeated()
+            .foldr(
+                atom,
+                |Spanned { inner, mut span }: Spanned<char>, rhs: Spanned<Expr<'a>>| {
+                    span.end = rhs.span.end;
+                    Spanned {
+                        inner: match inner {
+                            '+' => Expr::UnaryAdd(Box::new(rhs)),
+                            '-' => Expr::Negate(Box::new(rhs)),
+                            _ => unreachable!(),
+                        },
+                        span,
+                    }
+                },
+            )
+            .labelled("unary expression");
 
         let folder = |lhs: Spanned<Expr<'a>>,
                       (op, rhs): (Spanned<BinOperator>, Spanned<Expr<'a>>)| {
@@ -120,18 +146,22 @@ fn expr<'a>() -> impl Parser<'a, &'a str, Spanned<Expr<'a>>, RichErr<'a>> + Clon
             Spanned { span, inner }
         };
 
-        let prod = unary.clone().foldl(
-            padded!(
-                choice((
-                    just('*').to(BinOperator::Mul),
-                    just('/').to(BinOperator::Div),
-                ))
-                .spanned()
+        let prod = unary
+            .clone()
+            .foldl(
+                padded!(
+                    choice((
+                        just('*').to(BinOperator::Mul),
+                        just('/').to(BinOperator::Div),
+                    ))
+                    .labelled("binary operator (* or /)")
+                    .spanned()
+                )
+                .then(unary)
+                .repeated(),
+                folder,
             )
-            .then(unary)
-            .repeated(),
-            folder,
-        );
+            .labelled("multiplication or division expression");
 
         prod.clone().foldl(
             padded!(
@@ -139,6 +169,7 @@ fn expr<'a>() -> impl Parser<'a, &'a str, Spanned<Expr<'a>>, RichErr<'a>> + Clon
                     just('+').to(BinOperator::Add),
                     just('-').to(BinOperator::Sub),
                 ))
+                .labelled("binary operator (+ or -)")
                 .spanned()
             )
             .then(prod)
@@ -146,6 +177,8 @@ fn expr<'a>() -> impl Parser<'a, &'a str, Spanned<Expr<'a>>, RichErr<'a>> + Clon
             folder,
         )
     })
+    .labelled("expression")
+    .as_context()
 }
 
 fn ascii_parse<'a>() -> impl Parser<'a, &'a str, Spanned<Vec<u8>>, RichErr<'a>> {
@@ -162,70 +195,85 @@ fn ascii_parse<'a>() -> impl Parser<'a, &'a str, Spanned<Vec<u8>>, RichErr<'a>> 
             d @ b'0'..=b'9' => d - b'0',
             l @ b'a'..=b'f' => l - b'a' + 10,
             ..32 | 64..96 => unreachable!("masked out"),
-            128 => unreachable!("known ascii"),
+            128 => unreachable!("known to be ascii"),
             c => panic!("invalid hex digit: {}", c.escape_ascii()),
         }
     }
-    just('"')
-        .ignore_then(
-            choice((
-                none_of("\"\\")
-                    .filter(|c: &char| c.is_ascii())
-                    .map(|c| c as u8),
-                just('\\').ignore_then(choice((
-                    just('\\').to(b'\\'),
-                    just('\'').to(b'\''),
-                    just('\"').to(b'\"'),
-                    just('n').to(b'\n'),
-                    just('t').to(b'\t'),
-                    just('r').to(b'\r'),
-                    just('e').to(b'\x1b'),
-                    just('3')
-                        .ignore_then(one_of(OCT_DIGITS).then(one_of(OCT_DIGITS)))
-                        .map(|(a, b)| 0o300 + ((a as u8 - b'0') * 8) + (b as u8 - b'0')),
-                    (one_of(OCT_DIGITS).repeated().at_least(1).at_most(2))
-                        .fold(0, |acc, x| acc * 8 + (x as u8 - b'0')),
-                    just('x')
-                        .ignore_then(one_of(HEX_DIGITS).then(one_of(HEX_DIGITS)))
-                        .map(|(a, b)| (strict_hex_val(a) << 4) | strict_hex_val(b)),
-                ))),
-            ))
-            .repeated()
-            .collect(),
-        )
-        .then_ignore(just('"'))
-        .spanned()
-}
-
-fn line_inner<'a>() -> impl Parser<'a, &'a str, Option<Spanned<Directive<'a>>>, RichErr<'a>> {
-    choice((
-        (with_sep!(just("DATA"))
-            .ignore_then(expr().separated_by(padded!(just(","))).collect())
-            .map(Directive::DataDirective)),
-        with_sep!(just("ASCII"))
-            .ignore_then(ascii_parse())
-            .map(Directive::Ascii),
-        instr().map(Box::new).map(Directive::Instruction),
-    ))
-    .spanned()
-    .or_not()
-}
-
-fn parse_line<'a>() -> impl Parser<'a, &'a str, Line<'a>, RichErr<'a>> {
     padded!(
-        (text::ident().then_ignore(just(":")).spanned())
-            .or_not()
-            .then(line_inner())
-            .map(|(label, inner)| Line { label, inner })
-            .then_ignore(
-                (padded!(just(';')).then((any().filter(|c: &char| !c.is_newline())).repeated()))
-                    .or_not(),
+        just('"')
+            .ignore_then(
+                choice((
+                    none_of("\"\\")
+                        .filter(|c: &char| c.is_ascii())
+                        .map(|c| c as u8),
+                    just('\\').ignore_then(choice((
+                        just('\\').to(b'\\'),
+                        just('\'').to(b'\''),
+                        just('\"').to(b'\"'),
+                        just('n').to(b'\n'),
+                        just('t').to(b'\t'),
+                        just('r').to(b'\r'),
+                        just('e').to(b'\x1b'),
+                        just('3')
+                            .ignore_then(one_of(OCT_DIGITS).then(one_of(OCT_DIGITS)))
+                            .map(|(a, b)| 0o300 + ((a as u8 - b'0') * 8) + (b as u8 - b'0')),
+                        (one_of(OCT_DIGITS).repeated().at_least(1).at_most(2))
+                            .fold(0, |acc, x| acc * 8 + (x as u8 - b'0')),
+                        just('x')
+                            .ignore_then(one_of(HEX_DIGITS).then(one_of(HEX_DIGITS)))
+                            .map(|(a, b)| (strict_hex_val(a) << 4) | strict_hex_val(b)),
+                    ))),
+                ))
+                .repeated()
+                .collect(),
             )
+            .then_ignore(just('"'))
+            .spanned()
     )
+    .labelled("ascii string")
+    .as_context()
+}
+
+fn directive<'a>() -> impl Parser<'a, &'a str, Option<Spanned<Directive<'a>>>, RichErr<'a>> {
+    padded!(
+        choice((
+            with_sep!(just("DATA"))
+                .ignore_then(expr().separated_by(comma_delimiter()).collect())
+                .map(Directive::DataDirective)
+                .labelled("data directive")
+                .as_context(),
+            with_sep!(just("ASCII"))
+                .ignore_then(ascii_parse())
+                .map(Directive::Ascii)
+                .labelled("ASCII directive")
+                .as_context(),
+            instr().map(Box::new).map(Directive::Instruction),
+        ))
+        .spanned()
+    )
+    .or_not()
+    .labelled("directive")
+    .as_context()
+}
+
+fn line<'a>() -> impl Parser<'a, &'a str, Line<'a>, RichErr<'a>> {
+    padded!(text::ident().spanned().then_ignore(just(":")).or_not())
+        .labelled("label")
+        .as_context()
+        .then(directive())
+        .map(|(label, inner)| Line { label, inner })
+        .then_ignore(
+            (padded!(just(';')).then((any().filter(|c: &char| !c.is_newline())).repeated()))
+                .labelled("comment")
+                .or_not(),
+        )
+        .labelled("line")
 }
 
 pub(super) fn grammar<'a>() -> impl Parser<'a, &'a str, Vec<Line<'a>>, RichErr<'a>> {
-    parse_line().separated_by(just("\n")).collect()
+    line()
+        .separated_by(just("\n").labelled("newline"))
+        .collect()
 }
 
 #[cfg(test)]
@@ -240,7 +288,7 @@ mod ast_tests {
     #[test]
     fn parse_blank_line() {
         assert_eq!(
-            parse_line().parse("").unwrap(),
+            line().parse("").unwrap(),
             Line {
                 label: None,
                 inner: None
@@ -251,7 +299,7 @@ mod ast_tests {
     #[test]
     fn parse_data() {
         assert_eq!(
-            line_inner().parse("DATA 1, 1, 1").unwrap(),
+            directive().parse("DATA 1, 1, 1").unwrap(),
             Some(span(
                 Directive::DataDirective(vec![
                     span(expr!(1), 5..6),
