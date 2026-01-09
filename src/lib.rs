@@ -64,7 +64,7 @@ use std::sync::{Arc, Mutex};
 
 /// A small module that re-exports items needed when working with the Intcode interpreter
 pub mod prelude {
-    pub use crate::{Interpreter, State};
+    pub use crate::{Interpreter, State, StepOutcome};
     pub use std::iter::empty;
 }
 
@@ -101,6 +101,8 @@ pub enum ErrorState {
     WriteToImmediate(i64),
     /// An error occured with the logger
     LoggerFailed(io::Error),
+    /// An interpreter was used after previously erroring out
+    Poisoned,
 }
 
 impl PartialEq for ErrorState {
@@ -110,6 +112,7 @@ impl PartialEq for ErrorState {
             (Self::UnknownMode(lhs), Self::UnknownMode(rhs)) => lhs == rhs,
             (Self::NegativeMemAccess(lhs), Self::NegativeMemAccess(rhs)) => lhs == rhs,
             (Self::WriteToImmediate(lhs), Self::WriteToImmediate(rhs)) => lhs == rhs,
+            (Self::Poisoned, Self::Poisoned) => true,
             _ => false,
         }
     }
@@ -127,6 +130,7 @@ impl Display for ErrorState {
                 write!(f, "code attempted to write to immediate {i}")
             }
             ErrorState::LoggerFailed(e) => write!(f, "logger encountered an error: {e}"),
+            ErrorState::Poisoned => write!(f, "tried to reuse an interpreter after a fatal error"),
         }
     }
 }
@@ -139,6 +143,8 @@ pub struct Interpreter<'a> {
     index: u64,
     rel_offset: i64,
     code: IntcodeMem,
+    poisoned: bool,
+    halted: bool,
     logger: Option<Arc<Mutex<&'a mut (dyn Send + Sync + io::Write)>>>,
 }
 
@@ -270,6 +276,15 @@ enum OpCode {
     Halt = 99,
 }
 
+/// The outcome when an [Interpreter] tries to execute a single instruction
+#[derive(Debug, PartialEq)]
+pub enum StepOutcome {
+    /// step ran successfully
+    Running,
+    /// Step could not run, with the [State] representing why
+    Stopped(State),
+}
+
 impl Interpreter<'_> {
     fn param_val(&mut self, param: u64, mode: ParamMode) -> Result<i64, ErrorState> {
         match mode {
@@ -319,11 +334,28 @@ impl Interpreter<'_> {
         self.code[address]
     }
 
-    fn exec_instruction(
+    /// Run a single instruction
+    ///
+    /// On an error, returns an [Err] containing the appropriate [ErrorState]
+    /// Otherwise, returns an [Ok] containing the [StepOutcome]
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use intcode::prelude::*;
+    /// ```
+    #[doc(alias("step", "run"))]
+    pub fn exec_instruction(
         &mut self,
-        inputs: &mut Option<i64>,
-        outputs: &mut Vec<i64>,
-    ) -> Result<Option<State>, ErrorState> {
+        input: &mut impl Iterator<Item = i64>,
+        output: &mut Vec<i64>,
+    ) -> Result<StepOutcome, ErrorState> {
+        if self.poisoned {
+            return Err(ErrorState::Poisoned);
+        }
+        if self.halted {
+            return Ok(StepOutcome::Stopped(State::Halted));
+        }
         // Given a 5 digit number, digits ABCDE are used as follows:
         // DE is the two-digit opcode
         // C is the 1st parameter's mode
@@ -354,6 +386,7 @@ impl Interpreter<'_> {
                 match modes[$n - 1] {
                     ParamMode::Positional => u64::try_from(self.code[self.index + $n])?,
                     ParamMode::Immediate => {
+                        self.poisoned = true;
                         return Err(ErrorState::WriteToImmediate(self.code[self.index + $n]));
                     }
                     ParamMode::Relative => {
@@ -439,42 +472,42 @@ impl Interpreter<'_> {
                 report_op4!("add");
                 set_val!(dest!(3), select_by_mode!(1) + select_by_mode!(2));
                 self.index += 4;
-                Ok(None)
+                Ok(StepOutcome::Running)
             }
             OpCode::Mul => {
                 // multiply
                 report_op4!("mul");
                 set_val!(dest!(3), select_by_mode!(1) * select_by_mode!(2));
                 self.index += 4;
-                Ok(None)
+                Ok(StepOutcome::Running)
             }
             OpCode::In => {
                 // input
-                if let Some(input) = inputs.take() {
+                if let Some(input) = input.next() {
                     report_op2!("input");
                     set_val!(dest!(1), input);
                     self.index += 2;
-                    Ok(None)
+                    Ok(StepOutcome::Running)
                 } else {
-                    Ok(Some(State::Awaiting))
+                    Ok(StepOutcome::Stopped(State::Awaiting))
                 }
             }
             OpCode::Out => {
                 report_op2!("output");
                 // output
-                outputs.push(select_by_mode!(1));
+                output.push(select_by_mode!(1));
                 self.index += 2;
-                Ok(None)
+                Ok(StepOutcome::Running)
             }
             OpCode::Jnz => {
                 report_op3!("jnz");
                 // jump-if-true
                 if select_by_mode!(1) == 0 {
                     self.index += 3;
-                    Ok(None)
+                    Ok(StepOutcome::Running)
                 } else {
                     self.index = select_by_mode!(2).try_into()?;
-                    Ok(None)
+                    Ok(StepOutcome::Running)
                 }
             }
             OpCode::Jz => {
@@ -482,10 +515,10 @@ impl Interpreter<'_> {
                 // jump-if-false
                 if select_by_mode!(1) != 0 {
                     self.index += 3;
-                    Ok(None)
+                    Ok(StepOutcome::Running)
                 } else {
                     self.index = select_by_mode!(2).try_into()?;
-                    Ok(None)
+                    Ok(StepOutcome::Running)
                 }
             }
             OpCode::Lt => {
@@ -493,25 +526,26 @@ impl Interpreter<'_> {
                 // less than
                 set_val!(dest!(3), comp!(select_by_mode!(1) < select_by_mode!(2)));
                 self.index += 4;
-                Ok(None)
+                Ok(StepOutcome::Running)
             }
             OpCode::Eq => {
                 // equals
                 report_op4!("eq");
                 set_val!(dest!(3), comp!(select_by_mode!(1) == select_by_mode!(2)));
                 self.index += 4;
-                Ok(None)
+                Ok(StepOutcome::Running)
             }
             OpCode::Rbo => {
                 report_op2!("rbo");
                 // relative base offset
                 self.rel_offset += select_by_mode!(1);
                 self.index += 2;
-                Ok(None)
+                Ok(StepOutcome::Running)
             }
             OpCode::Halt => {
                 report_op!("{instruction:05} [halt]");
-                Ok(Some(State::Halted))
+                self.halted = true;
+                Ok(StepOutcome::Stopped(State::Halted))
             }
         }
     }
@@ -524,6 +558,8 @@ impl Interpreter<'_> {
             index: 0,
             rel_offset: 0,
             logger: None,
+            poisoned: false,
+            halted: false,
             code: code.into_iter().collect(),
         }
     }
@@ -539,15 +575,10 @@ impl Interpreter<'_> {
     ) -> Result<(Vec<i64>, State), ErrorState> {
         let mut outputs = Vec::new();
         let mut inputs = inputs.into_iter();
-        let mut current_input = None;
         loop {
-            if current_input.is_none() {
-                current_input = inputs.next();
-            }
-            match self.exec_instruction(&mut current_input, &mut outputs) {
-                Ok(None) => (),
-                Ok(Some(State::Halted)) => break Ok((outputs, State::Halted)),
-                Ok(Some(State::Awaiting)) => break Ok((outputs, State::Awaiting)),
+            match self.exec_instruction(&mut inputs, &mut outputs) {
+                Ok(StepOutcome::Running) => (),
+                Ok(StepOutcome::Stopped(state)) => break Ok((outputs, state)),
                 Err(e) => break Err(e),
             }
         }
