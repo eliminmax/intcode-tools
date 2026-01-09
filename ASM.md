@@ -3,7 +3,6 @@ SPDX-FileCopyrightText: 2026 Eli Array Minkoff
 
 SPDX-License-Identifier: 0BSD
 -->
-
 # Intcode Assembly Language (IAL)
 
 <!-- vim-markdown-toc GFM -->
@@ -39,7 +38,7 @@ A label is a unique[^label-uniqueness] identifer which can be used to refer to t
 
 As an example, the following code starts out with a single `ADD` instruction, which sets the initially-zeroed opcode integer of the following instruction to a `HALT` instruction.
 
-```
+```ial
 ADD #0, #99, halt
 halt:
 ```
@@ -52,7 +51,7 @@ Note that no Unicode normalization is performed, so the identifier `é` (U+00e9 
 
 ### Directives
 
-IAL has 3 kinds of directives: instructions, DATA directives, and [ASCII][ASCII-AOC] directives.
+IAL has 3 kinds of directives: instructions, DATA directives, and ASCII[^ASCII-AOC] directives.
 
 Each directive starts with a mnemonic, followed by at least one non-newline whitespace character.
 
@@ -99,7 +98,7 @@ A data directive consists of the special mnemonic "`DATA`", followed by any numb
 
 #### ASCII Directives
 
-An [ASCII][ASCII-AOC] directive consists of the special mnemonic "`ASCII`", followed by string of [ASCII][ASCII-REAL] text, within double quotes. Each character within the quotes may be any ASCII character other than `\` or `"`, or an escape sequence.
+An ASCII[^ASCII-AOC] directive consists of the special mnemonic "`ASCII`", followed by string of ASCII[^ASCII-REAL] text, within double quotes. Each character within the quotes may be any ASCII character other than `\` or `"`, or an escape sequence.
 
 The following escape sequences are supported:
 
@@ -117,7 +116,7 @@ The following escape sequences are supported:
 
 For example, the following hello world program uses an ASCII directive:
 
-```
+```ial
 RBO #hello
 loop: OUT @0
       RBO #1
@@ -169,6 +168,8 @@ One major difference: In 3 cases, the name for an opcode I'd used in my interpre
 [^proposed-syntax]: see [Extensions to Assembly Proposal](#extensions-to-assembly-proposal)
 [^label-uniqueness]: if a label is defined more than once, the code is invalid, and cannot be assembled due to the ambiguity if that label is ever used.
 [^neg-sub]: while the same character is used, it is unambiguous in context whether it's a subtraction or a negative sign.
+[^ASCII-AOC]: [Aft Scaffolding Control and Information Interface](https://adventofcode.com/2019/day/17)
+[^ASCII-REAL]: [American Standard Code for Information Interchange](https://en.wikipedia.org/wiki/ASCII)
 
 [day-2]: <https://adventofcode.com/2019/day/2>
 [day-5]: <https://adventofcode.com/2019/day/5>
