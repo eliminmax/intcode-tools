@@ -103,10 +103,10 @@ pub enum ErrorState {
 impl PartialEq for ErrorState {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::UnrecognizedOpcode(l0), Self::UnrecognizedOpcode(r0)) => l0 == r0,
-            (Self::UnknownMode(l0), Self::UnknownMode(r0)) => l0 == r0,
-            (Self::NegativeMemAccess(l0), Self::NegativeMemAccess(r0)) => l0 == r0,
-            (Self::WriteToImmediate(l0), Self::WriteToImmediate(r0)) => l0 == r0,
+            (Self::UnrecognizedOpcode(lhs), Self::UnrecognizedOpcode(rhs)) => lhs == rhs,
+            (Self::UnknownMode(lhs), Self::UnknownMode(rhs)) => lhs == rhs,
+            (Self::NegativeMemAccess(lhs), Self::NegativeMemAccess(rhs)) => lhs == rhs,
+            (Self::WriteToImmediate(lhs), Self::WriteToImmediate(rhs)) => lhs == rhs,
             _ => false,
         }
     }
