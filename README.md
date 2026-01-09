@@ -8,6 +8,8 @@ SPDX-License-Identifier: 0BSD
 
 A library built around my Intcode module from Advent of Code 2019, cleaned up and reorganized, with additions to support an Intcode assembly language I've dubbed IAL.
 
+**It is in a state of active tweaking with regular breaking changes, and does not yet follow SemVer**
+
 See [ASM.md](./ASM) for documentation of IAL's syntax and semantics.
 
 It's organized as a library which provides the `intcode::Interpreter` struct as a way to interact with intcode, an optional `intcode::asm` module which provides an implementation of the assembly language from the Esolang wiki, and a few small binaries that make use of those: `intcode_as` is an assembler, and `intcode_ascii` provides an interactive interface using [Aft Scaffolding Control and Information Interface](https://adventofcode.com/2019/day/17) *(not to be confused with the [American Standard Code for Information Interchange](https://en.wikipedia.org/wiki/ASCII))*.
@@ -45,8 +47,6 @@ assert_eq!(
     (vec![1024], State::Halted)
 );
 ```
-
-
 
 ## Code and Documentation Provenance
 
