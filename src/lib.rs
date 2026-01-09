@@ -291,7 +291,7 @@ impl Interpreter<'_> {
     }
 
     /// Manually set a memory location
-    #[doc(alias = "poke")]
+    #[doc(alias("poke", "write"))]
     pub fn mem_override(&mut self, location: u64, value: i64) {
         self.code[location] = value;
     }
