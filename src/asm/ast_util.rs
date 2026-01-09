@@ -122,13 +122,13 @@ macro_rules! param {
 }
 
 #[inline]
-/// Unwrap a [`Spanned<T>`] into the underlying [`T`]
+/// Unwrap a [`Spanned<T>`] into the underlying `T`
 pub fn unspan<T>(Spanned { inner, .. }: Spanned<T>) -> T {
     inner
 }
 
 #[inline]
-/// Wrap a [`T`] into a [`Spanned<T>`] with the provided range
+/// Wrap a `T` into a [`Spanned<T>`] with the provided range
 pub const fn span<T>(inner: T, range: Range<usize>) -> Spanned<T> {
     Spanned {
         inner,

@@ -203,7 +203,7 @@ impl BinOperator {
 /// [A literal number]: Expr::Number
 /// [A label]: Expr::Ident
 /// [line]: Line
-/// [wrapped in parentheses]: Expr::Inner
+/// [wrapped in parentheses]: Expr::Parenthesized
 /// [negated with `-`]: Expr::Negate
 /// [basic arithmetic operations]: Expr::BinOp
 ///
