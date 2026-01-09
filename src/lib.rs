@@ -15,7 +15,7 @@
 //! let mut interpreter = Interpreter::new(vec![104, 1024, 99]);
 //!
 //! assert_eq!(
-//!     interpreter.run_through_inputs(std::iter::empty()).unwrap(),
+//!     interpreter.run_through_inputs(empty()).unwrap(),
 //!     (vec![1024], State::Halted)
 //! );
 //! ```
@@ -58,12 +58,14 @@ use std::error::Error;
 use std::fmt::{self, Display};
 use std::ops::{Index, IndexMut};
 use std::io;
+use std::iter::empty;
 use std::num::TryFromIntError;
 use std::sync::{Arc, Mutex};
 
 /// A small module that re-exports items needed when working with the Intcode interpreter
 pub mod prelude {
     pub use crate::{Interpreter, State};
+    pub use std::iter::empty;
 }
 
 #[cfg(feature = "asm")]
@@ -557,7 +559,7 @@ impl Interpreter<'_> {
         while Self::parse_op(self.code[self.index])
             .is_ok_and(|(opcode, _)| !matches!(opcode, OpCode::In | OpCode::Out | OpCode::Halt))
         {
-            self.exec_instruction(&mut None, &mut Vec::with_capacity(0))?;
+            self.exec_instruction(&mut empty(), &mut Vec::with_capacity(0))?;
         }
         Ok(())
     }
