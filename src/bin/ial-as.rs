@@ -151,8 +151,21 @@ fn report_ast_assembly_err(err: AssemblyError<'_>, file: &str, source: &str) {
 fn main() -> ExitCode {
     use std::env::args_os;
     use std::fs::read_to_string;
-    let input_file = args_os().nth(1).expect("must provide filename");
-    let input = read_to_string(&input_file).expect("must be able to read");
+    let Some(input_file) = args_os().nth(1) else {
+        eprintln!("No source filename provided");
+        return ExitCode::FAILURE;
+    };
+
+    let input = match read_to_string(&input_file) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!(
+                "Failed to read source file {}: {e}",
+                input_file.to_string_lossy()
+            );
+            return ExitCode::FAILURE;
+        }
+    };
 
     let ast = match build_ast(&input) {
         Ok(ast) => ast,
