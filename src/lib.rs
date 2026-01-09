@@ -56,6 +56,7 @@ mod mmu;
 
 use std::error::Error;
 use std::fmt::{self, Display};
+use std::ops::{Index, IndexMut};
 use std::io;
 use std::num::TryFromIntError;
 use std::sync::{Arc, Mutex};
@@ -161,6 +162,20 @@ impl fmt::Debug for Interpreter<'_> {
                 },
             )
             .finish()
+    }
+}
+
+impl Index<u64> for Interpreter<'_> {
+    type Output = i64;
+
+    fn index(&self, i: u64) -> &Self::Output {
+        self.code.index(i)
+    }
+}
+
+impl IndexMut<u64> for Interpreter<'_> {
+    fn index_mut(&mut self, i: u64) -> &mut Self::Output {
+        self.code.index_mut(i)
     }
 }
 
