@@ -318,7 +318,7 @@ impl Interpreter<'_> {
         // Opcode 02 is multiply
         // C=2: 1st parameter is in relative mode
         // B=1: 2nd parameter is in immediate mode
-        // A=0: 3rd parameter is in positional mode (the only valid mode for out parameters)
+        // A=0: 3rd parameter is in positional mode
 
         let instruction = self.code[self.index];
         // Ensure that instruction is in range - not strictly needed, so only a debug_assert
