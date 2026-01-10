@@ -11,6 +11,10 @@ edition = "2024"
 name = "intcode_ascii"
 
 [[bin]]
+name = "ial-dis"
+required-features = [ "disasm" ]
+
+[[bin]]
 name = "ial-as"
 required-features = [ "asm" ]
 
