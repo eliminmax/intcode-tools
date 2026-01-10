@@ -56,11 +56,9 @@ mod mmu;
 
 use std::error::Error;
 use std::fmt::{self, Display};
-use std::ops::{Index, IndexMut};
-use std::io;
 use std::iter::empty;
 use std::num::TryFromIntError;
-use std::sync::{Arc, Mutex};
+use std::ops::{Index, IndexMut};
 
 /// A small module that re-exports items needed when working with the Intcode interpreter
 pub mod prelude {
@@ -99,8 +97,6 @@ pub enum ErrorState {
     NegativeMemAccess(TryFromIntError),
     /// An instruction tried to write to an immediate destination
     WriteToImmediate(i64),
-    /// An error occured with the logger
-    LoggerFailed(io::Error),
     /// An interpreter was used after previously erroring out
     Poisoned,
 }
@@ -129,7 +125,6 @@ impl Display for ErrorState {
             ErrorState::WriteToImmediate(i) => {
                 write!(f, "code attempted to write to immediate {i}")
             }
-            ErrorState::LoggerFailed(e) => write!(f, "logger encountered an error: {e}"),
             ErrorState::Poisoned => write!(f, "tried to reuse an interpreter after a fatal error"),
         }
     }
@@ -139,41 +134,34 @@ impl Error for ErrorState {}
 
 #[derive(Clone)]
 /// An intcode interpreter, which provides optional logging of instructions encountered.
-pub struct Interpreter<'a> {
+pub struct Interpreter {
     index: u64,
     rel_offset: i64,
     code: IntcodeMem,
     poisoned: bool,
     halted: bool,
-    logger: Option<Arc<Mutex<&'a mut (dyn Send + Sync + io::Write)>>>,
+    trace: Option<trace::Trace>,
 }
 
 // ignore the logger field
-impl PartialEq for Interpreter<'_> {
+impl PartialEq for Interpreter {
     fn eq(&self, other: &Self) -> bool {
         self.index == other.index && self.rel_offset == other.rel_offset && self.code == other.code
     }
 }
 
-impl fmt::Debug for Interpreter<'_> {
+impl fmt::Debug for Interpreter {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt.debug_struct("Interpreter")
             .field("code", &self.code)
             .field("rbo", &self.rel_offset)
             .field("ip", &self.index)
-            .field(
-                "logger as *const _",
-                &if let Some(ref logger) = self.logger {
-                    logger as *const _
-                } else {
-                    std::ptr::null()
-                },
-            )
+            .field("tracing", &self.trace.is_some())
             .finish()
     }
 }
 
-impl Index<u64> for Interpreter<'_> {
+impl Index<u64> for Interpreter {
     type Output = i64;
 
     fn index(&self, i: u64) -> &Self::Output {
@@ -181,11 +169,13 @@ impl Index<u64> for Interpreter<'_> {
     }
 }
 
-impl IndexMut<u64> for Interpreter<'_> {
+impl IndexMut<u64> for Interpreter {
     fn index_mut(&mut self, i: u64) -> &mut Self::Output {
         self.code.index_mut(i)
     }
 }
+
+pub mod trace;
 
 /// Parameter mode for Intcode instruction
 ///
@@ -237,12 +227,6 @@ impl From<TryFromIntError> for ErrorState {
     }
 }
 
-impl From<io::Error> for ErrorState {
-    fn from(err: io::Error) -> Self {
-        Self::LoggerFailed(err)
-    }
-}
-
 impl TryFrom<i64> for ParamMode {
     type Error = ErrorState;
     fn try_from(i: i64) -> Result<Self, Self::Error> {
@@ -254,16 +238,13 @@ impl TryFrom<i64> for ParamMode {
         }
     }
 }
-
-impl<'a> Interpreter<'a> {
-    /// Log with the provided item that implements [`io::Write`].
-    pub fn log_with(&mut self, logger: &'a mut (dyn io::Write + Send + Sync)) {
-        self.logger = Some(Arc::new(Mutex::new(logger)));
-    }
-}
-
 #[derive(Debug, PartialEq, Clone, Copy)]
-enum OpCode {
+/// An Intcode OpCode
+///
+/// For explanations of the specific opcodes and their meaning, either go through Advent of Code
+/// 2019, or see [asm::Instr].
+#[allow(missing_docs, reason = "trivial")]
+pub enum OpCode {
     Add = 1,
     Mul = 2,
     In = 3,
@@ -276,6 +257,23 @@ enum OpCode {
     Halt = 99,
 }
 
+impl Display for OpCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Add => write!(f, "ADD"),
+            Self::Mul => write!(f, "MUL"),
+            Self::In => write!(f, "IN"),
+            Self::Out => write!(f, "OUT"),
+            Self::Jnz => write!(f, "JNZ"),
+            Self::Jz => write!(f, "JZ"),
+            Self::Lt => write!(f, "LT"),
+            Self::Eq => write!(f, "EQ"),
+            Self::Rbo => write!(f, "RBO"),
+            Self::Halt => write!(f, "HALT"),
+        }
+    }
+}
+
 /// The outcome when an [Interpreter] tries to execute a single instruction
 #[derive(Debug, PartialEq)]
 pub enum StepOutcome {
@@ -285,21 +283,7 @@ pub enum StepOutcome {
     Stopped(State),
 }
 
-impl Interpreter<'_> {
-    fn param_val(&mut self, param: u64, mode: ParamMode) -> Result<i64, ErrorState> {
-        match mode {
-            ParamMode::Positional => {
-                let i = self.code[param].try_into()?;
-                Ok(self.code[i])
-            }
-            ParamMode::Immediate => Ok(self.code[param]),
-            ParamMode::Relative => {
-                let i = (self.code[param] + self.rel_offset).try_into()?;
-                Ok(self.code[i])
-            }
-        }
-    }
-
+impl Interpreter {
     fn parse_op(op: i64) -> Result<(OpCode, [ParamMode; 3]), ErrorState> {
         let modes: [ParamMode; 3] = [
             ((op / 100) % 10).try_into()?,  // C (hundreds place)
@@ -356,6 +340,7 @@ impl Interpreter<'_> {
         if self.halted {
             return Ok(StepOutcome::Stopped(State::Halted));
         }
+
         // Given a 5 digit number, digits ABCDE are used as follows:
         // DE is the two-digit opcode
         // C is the 1st parameter's mode
@@ -370,14 +355,32 @@ impl Interpreter<'_> {
         // A=0: 3rd parameter is in positional mode
 
         let instruction = self.code[self.index];
-        // Ensure that instruction is in range - not strictly needed, so only a debug_assert
-        debug_assert!((0..100_000).contains(&instruction));
 
         let (opcode, modes) = Self::parse_op(instruction)?;
 
+        macro_rules! trace {
+            ($resolved: expr) => {
+                if let Some(trace) = self.trace.as_mut() {
+                    trace.push(instruction, self.index, self.rel_offset, &$resolved);
+                }
+            };
+        }
+
         /// Shorthand to get the `$n`th parameter's value
-        macro_rules! select_by_mode {
-            ($n: literal) => {{ self.param_val(self.index + $n, modes[$n - 1])? }};
+        macro_rules! arg {
+            ($n: literal) => {{
+                match modes[$n - 1] {
+                    ParamMode::Positional => {
+                        let index = self.code[(self.index + $n)];
+                        self.code[u64::try_from(index)?]
+                    }
+                    ParamMode::Immediate => self.code[self.index + $n],
+                    ParamMode::Relative => {
+                        let index = self.code[(self.index + $n)] + self.rel_offset;
+                        self.code[u64::try_from(index)?]
+                    }
+                }
+            }};
         }
 
         /// Resolves to the destination address pointed to by the `$n`th parameter
@@ -396,154 +399,74 @@ impl Interpreter<'_> {
             }};
         }
 
-        macro_rules! set_val {
-            ($dest: expr, $new_val: expr) => {{
-                let val: i64 = $new_val;
-                let dest: u64 = $dest;
-                self.code[dest] = val;
+        /// using a fake closure to pass in the expression that determines the value, this can
+        /// implement all 4 instructions that take 2 inputs and an output
+        macro_rules! a_b_out {
+            (|$a: ident, $b: ident| $val: expr) => {{
+                let $a = arg!(1);
+                let $b = arg!(2);
+                let (dest, val) = { (dest!(3), $val) };
+                trace!([
+                    (self.code[self.index + 1], $a),
+                    (self.code[self.index + 2], $b),
+                    (self.code[self.index + 3], dest.cast_signed()),
+                ]);
+                self[dest] = val;
+                self.index += 4;
+                Ok(StepOutcome::Running)
             }};
         }
 
-        /// A comparison instruction
-        macro_rules! comp {
-            ($op: expr) => {{ if $op { 1 } else { 0 } }};
-        }
-
-        macro_rules! report_op {
-            ($fmt: literal) => {
-                if let Some(ref logger) = self.logger {
-                    let mut logger = logger.lock().unwrap();
-                    write!(logger, "ip: {:>8} | rbo: {:>5} | ", self.index, self.rel_offset)?;
-                    writeln!(logger, $fmt)?;
+        macro_rules! jump_if {
+            (|$n: ident| $expr: expr) => {{
+                let $n = arg!(1);
+                let dest = arg!(2);
+                trace!([
+                    (self.code[self.index + 1], $n),
+                    (self.code[self.index + 2], dest),
+                ]);
+                if $expr {
+                    self.index = dest.try_into()?;
+                } else {
+                    self.index += 3;
                 }
-            };
-            ($fmt: literal, $($args:tt)*) => {
-                if let Some(ref logger) = self.logger {
-                    let mut logger = logger.lock().unwrap();
-                    write!(logger, "ip: {:>8} | rbo: {:>5} | ", self.index, self.rel_offset)?;
-                    logger.write_fmt(format_args!($fmt, $($args)*))?;
-                    writeln!(logger)?;
-                }
-            }
-        }
-
-        macro_rules! report_op4 {
-            ($name: literal) => {
-                report_op!(
-                    "{instruction:05} [{}({}{}, {}{}, {}{})]",
-                    $name,
-                    modes[0],
-                    self.code[self.index + 1],
-                    modes[1],
-                    self.code[self.index + 2],
-                    modes[2],
-                    self.code[self.index + 3]
-                )
-            };
-        }
-
-        macro_rules! report_op3 {
-            ($name: literal) => {
-                report_op!(
-                    "{instruction:05} [{}({}{}, {}{})]",
-                    $name,
-                    modes[0],
-                    self.code[self.index + 1],
-                    modes[1],
-                    self.code[self.index + 2],
-                )
-            };
-        }
-
-        macro_rules! report_op2 {
-            ($name: literal) => {
-                report_op!(
-                    "{instruction:05} [{}({}{})]",
-                    $name,
-                    modes[0],
-                    self.code[self.index + 1],
-                )
-            };
+                Ok(StepOutcome::Running)
+            }};
         }
 
         match opcode {
-            OpCode::Add => {
-                // add
-                report_op4!("add");
-                set_val!(dest!(3), select_by_mode!(1) + select_by_mode!(2));
-                self.index += 4;
-                Ok(StepOutcome::Running)
-            }
-            OpCode::Mul => {
-                // multiply
-                report_op4!("mul");
-                set_val!(dest!(3), select_by_mode!(1) * select_by_mode!(2));
-                self.index += 4;
-                Ok(StepOutcome::Running)
-            }
+            OpCode::Add => a_b_out!(|a, b| a + b),
+            OpCode::Mul => a_b_out!(|a, b| a * b),
             OpCode::In => {
-                // input
-                if let Some(input) = input.next() {
-                    report_op2!("input");
-                    set_val!(dest!(1), input);
-                    self.index += 2;
-                    Ok(StepOutcome::Running)
-                } else {
-                    Ok(StepOutcome::Stopped(State::Awaiting))
-                }
-            }
-            OpCode::Out => {
-                report_op2!("output");
-                // output
-                output.push(select_by_mode!(1));
+                let Some(input) = input.next() else {
+                    return Ok(StepOutcome::Stopped(State::Awaiting));
+                };
+                let dest = dest!(1);
+                trace!([(self.code[self.index + 1], input)]);
+                self[dest] = input;
                 self.index += 2;
                 Ok(StepOutcome::Running)
             }
-            OpCode::Jnz => {
-                report_op3!("jnz");
-                // jump-if-true
-                if select_by_mode!(1) == 0 {
-                    self.index += 3;
-                    Ok(StepOutcome::Running)
-                } else {
-                    self.index = select_by_mode!(2).try_into()?;
-                    Ok(StepOutcome::Running)
-                }
-            }
-            OpCode::Jz => {
-                report_op3!("jz");
-                // jump-if-false
-                if select_by_mode!(1) != 0 {
-                    self.index += 3;
-                    Ok(StepOutcome::Running)
-                } else {
-                    self.index = select_by_mode!(2).try_into()?;
-                    Ok(StepOutcome::Running)
-                }
-            }
-            OpCode::Lt => {
-                report_op4!("lt");
-                // less than
-                set_val!(dest!(3), comp!(select_by_mode!(1) < select_by_mode!(2)));
-                self.index += 4;
+            OpCode::Out => {
+                let out_val = arg!(1);
+                trace!([(self.code[self.index + 1], out_val)]);
+                output.push(out_val);
+                self.index += 2;
                 Ok(StepOutcome::Running)
             }
-            OpCode::Eq => {
-                // equals
-                report_op4!("eq");
-                set_val!(dest!(3), comp!(select_by_mode!(1) == select_by_mode!(2)));
-                self.index += 4;
-                Ok(StepOutcome::Running)
-            }
+            OpCode::Jnz => jump_if!(|i| i != 0),
+            OpCode::Jz => jump_if!(|i| i == 0),
+            OpCode::Lt => a_b_out!(|a, b| if a < b { 1 } else { 0 }),
+            OpCode::Eq => a_b_out!(|a, b| if a == b { 1 } else { 0 }),
             OpCode::Rbo => {
-                report_op2!("rbo");
-                // relative base offset
-                self.rel_offset += select_by_mode!(1);
+                let offset = arg!(1);
+                trace!([(self.code[self.index + 1], offset)]);
+                self.rel_offset += arg!(1);
                 self.index += 2;
                 Ok(StepOutcome::Running)
             }
             OpCode::Halt => {
-                report_op!("{instruction:05} [halt]");
+                trace!([]);
                 self.halted = true;
                 Ok(StepOutcome::Stopped(State::Halted))
             }
@@ -557,9 +480,9 @@ impl Interpreter<'_> {
         Self {
             index: 0,
             rel_offset: 0,
-            logger: None,
             poisoned: false,
             halted: false,
+            trace: None,
             code: code.into_iter().collect(),
         }
     }
@@ -587,7 +510,7 @@ impl Interpreter<'_> {
     /// Pre-compute as much as possible - that is, run every up to, but not including, the first
     /// `IN`, `OUT`, or `HALT` instruction, bubbling up any errors that occur.
     pub fn precompute(&mut self) -> Result<(), ErrorState> {
-        while Self::parse_op(self.code[self.index])
+        while Self::parse_op(self[self.index])
             .is_ok_and(|(opcode, _)| !matches!(opcode, OpCode::In | OpCode::Out | OpCode::Halt))
         {
             self.exec_instruction(&mut empty(), &mut Vec::with_capacity(0))?;
@@ -599,7 +522,6 @@ impl Interpreter<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::iter::empty;
     /// Example program from day 9, which takes no input and outputs its own code
     #[test]
     fn quine() {
@@ -650,7 +572,7 @@ mod tests {
 
         // make sure that interpreter can still be used
         assert_eq!(
-            interpreter.run_through_inputs(vec![1].into_iter()),
+            interpreter.run_through_inputs([1]),
             Ok((vec![1], State::Halted))
         );
     }
