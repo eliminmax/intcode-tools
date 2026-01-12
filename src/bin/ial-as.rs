@@ -2,12 +2,77 @@
 //
 // SPDX-License-Identifier: 0BSD
 
-use chumsky::error::{Rich, RichPattern};
-use intcode::asm::{AssemblyError, assemble_ast, build_ast};
-
-use std::process::ExitCode;
-
 use ariadne::{Color, Fmt, Label, Report, ReportKind, Source};
+use chumsky::error::{Rich, RichPattern};
+use clap::{Parser, ValueEnum};
+use intcode::asm::{AssemblyError, assemble_ast, build_ast};
+use std::process::ExitCode;
+use std::path::PathBuf;
+use std::io::{self, Write};
+
+#[derive(PartialEq, Clone, ValueEnum)]
+enum OutputFormat {
+    /// comma-separated ASCII-encoded decimal numbers
+    #[value(alias("text"))]
+    #[value(alias("aoc"))]
+    Ascii,
+    /// little-endian 64-bit integers
+    #[cfg_attr(target_endian = "little", value(alias("binary-native")))]
+    #[value(name("binary-little-endian"), alias("binle"))]
+    LittleEndian,
+    #[cfg_attr(target_endian = "big", value(alias("binary-native")))]
+    #[value(name("binary-big-endian"), alias("binbe"))]
+    /// big-endian 64-bit integers
+    BigEndian,
+}
+
+impl OutputFormat {
+    fn output<W: Write>(self, intcode: Vec<i64>, mut writer: W) -> io::Result<()> {
+        match self {
+            OutputFormat::Ascii => {
+                use itertools::Itertools;
+                write!(&mut writer, "{}", intcode.into_iter().format(","))
+            }
+            OutputFormat::LittleEndian => {
+                for i in intcode {
+                    writer.write_all(&i.to_le_bytes())?
+                }
+                Ok(())
+            }
+            OutputFormat::BigEndian => {
+                for i in intcode {
+                    writer.write_all(&i.to_be_bytes())?
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+const VERSION: &str = concat!(
+    env!("CARGO_PKG_NAME"), '-',
+    env!("CARGO_CRATE_NAME"), '-',
+    env!("CARGO_PKG_VERSION")
+);
+
+#[derive(Parser)]
+#[command(version = env!("CARGO_PKG_VERSION"))]
+#[command(long_version = VERSION)]
+#[command(about = "IAC Assembler", long_about = None)]
+struct Args {
+    /// Input file containing the assembly
+    #[arg(short, long)]
+    #[arg(long_help = "uses stdin if unset or set to '-'")]
+    input: Option<PathBuf>,
+    /// Output file for the assembled intcode
+    #[arg(short, long)]
+    #[arg(long_help = "uses stdout if unset or set to '-'")]
+    output: Option<PathBuf>,
+    /// Output format for the assembled intcode
+    #[arg(short, long)]
+    #[arg(default_value = "ascii")]
+    format: OutputFormat,
+}
 
 fn report_ast_build_err(err: Rich<'_, char>, file: &str, source: &str) {
     use std::fmt::Write;
@@ -110,20 +175,22 @@ fn report_ast_assembly_err(err: AssemblyError<'_>, file: &str, source: &str) {
 }
 
 fn main() -> ExitCode {
-    use std::env::args_os;
-    use std::fs::read_to_string;
-    let Some(input_file) = args_os().nth(1) else {
-        eprintln!("No source filename provided");
-        return ExitCode::FAILURE;
+    use std::fs::{read_to_string, OpenOptions};
+    use std::io;
+    let args = Args::parse();
+    let (file, input) = {
+        use std::borrow::Cow;
+        if let Some(path) = args.input.as_deref() {
+            (path.to_string_lossy(), read_to_string(path))
+        } else {
+            (Cow::Borrowed("stdin"), io::read_to_string(io::stdin()))
+        }
     };
 
-    let input = match read_to_string(&input_file) {
+    let input = match input {
         Ok(s) => s,
         Err(e) => {
-            eprintln!(
-                "Failed to read source file {}: {e}",
-                input_file.to_string_lossy()
-            );
+            eprintln!("Failed to read source from {file}: {e}");
             return ExitCode::FAILURE;
         }
     };
@@ -131,9 +198,8 @@ fn main() -> ExitCode {
     let ast = match build_ast(&input) {
         Ok(ast) => ast,
         Err(errs) => {
-            let escaped_filename = input_file.to_string_lossy();
             for err in errs {
-                report_ast_build_err(err, &escaped_filename, &input);
+                report_ast_build_err(err, &file, &input);
             }
             return ExitCode::FAILURE;
         }
@@ -142,11 +208,32 @@ fn main() -> ExitCode {
     let intcode = match assemble_ast(ast) {
         Ok(code) => code,
         Err(e) => {
-            report_ast_assembly_err(e, &input_file.to_string_lossy(), &input);
+            report_ast_assembly_err(e, &file, &input);
             return ExitCode::FAILURE;
         }
     };
-    let intcode: Vec<String> = intcode.into_iter().map(|i| i.to_string()).collect();
-    println!("{}", intcode.join(","));
-    ExitCode::SUCCESS
+    if let Some(outfile) = args.output.as_deref() {
+        let writer = match OpenOptions::new().write(true).open(outfile) {
+            Ok(w) => w,
+            Err(e) => {
+                eprintln!("Failed to open {} for writing: {e}.", outfile.display());
+                return ExitCode::FAILURE;
+            }
+        };
+        match args.format.output(intcode, writer) {
+            Ok(_) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("Failed to write to {}: {e}.", outfile.display());
+                ExitCode::FAILURE
+            }
+        }
+    } else {
+        match args.format.output(intcode, io::stdout()) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(e) => {
+                eprintln!("Failed to write to stdout: {e}.");
+                ExitCode::FAILURE
+            }
+        }
+    }
 }
