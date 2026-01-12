@@ -8,11 +8,11 @@ use std::fmt;
 
 /// a virtual memory management unit
 pub(super) struct IntcodeMem {
-    segments: HashMap<u64, Box<[i64; 512]>>,
+    segments: HashMap<i64, Box<[i64; 512]>>,
 }
 
 impl IntcodeMem {
-    fn active_segments(&self) -> BTreeSet<u64> {
+    fn active_segments(&self) -> BTreeSet<i64> {
         self.segments
             .iter()
             .filter_map(|(&k, v)| {
@@ -68,9 +68,9 @@ impl std::iter::FromIterator<i64> for IntcodeMem {
     }
 }
 
-impl std::ops::Index<u64> for IntcodeMem {
+impl std::ops::Index<i64> for IntcodeMem {
     type Output = i64;
-    fn index(&self, i: u64) -> &i64 {
+    fn index(&self, i: i64) -> &i64 {
         self.segments
             .get(&(i & !0x1ff))
             .map(|s| s.index((i & 0x1ff) as usize))
@@ -78,13 +78,12 @@ impl std::ops::Index<u64> for IntcodeMem {
     }
 }
 
-impl std::ops::IndexMut<u64> for IntcodeMem {
-    fn index_mut(&mut self, i: u64) -> &mut i64 {
-        let segment_index = i as usize & 0x1ff;
-        &mut self
-            .segments
+impl std::ops::IndexMut<i64> for IntcodeMem {
+    fn index_mut(&mut self, i: i64) -> &mut i64 {
+        self.segments
             .entry(i & !0x1ff)
-            .or_insert(Box::new([0; 512]))[segment_index]
+            .or_insert(Box::new([0; 512]))
+            .index_mut((i & 0x1ff) as usize)
     }
 }
 
@@ -107,8 +106,8 @@ impl Clone for IntcodeMem {
 }
 
 pub(super) struct IntcodeMemIter {
-    segments: BTreeMap<u64, [i64; 512]>,
-    current_segment: u64,
+    segments: BTreeMap<i64, [i64; 512]>,
+    current_segment: i64,
     segment_index: usize,
 }
 

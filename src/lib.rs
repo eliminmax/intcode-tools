@@ -35,7 +35,6 @@ mod mmu;
 use std::error::Error;
 use std::fmt::{self, Display};
 use std::iter::empty;
-use std::num::TryFromIntError;
 use std::ops::{Index, IndexMut};
 
 /// A small module that re-exports items useful when working with the Intcode interpreter
@@ -68,7 +67,7 @@ pub enum State {
     Halted,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 /// An error occured when executing an intcode instruction
 pub enum ErrorState {
     /// An invalid opcode was encountered
@@ -76,24 +75,11 @@ pub enum ErrorState {
     /// An unknown parameter mode was encountered
     UnknownMode(i64),
     /// A negative memory address was encountered
-    NegativeMemAccess(TryFromIntError),
+    NegativeMemAccess(i64),
     /// An instruction tried to write to an immediate destination
     WriteToImmediate(i64),
     /// An interpreter was used after previously erroring out
     Poisoned,
-}
-
-impl PartialEq for ErrorState {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::UnrecognizedOpcode(lhs), Self::UnrecognizedOpcode(rhs)) => lhs == rhs,
-            (Self::UnknownMode(lhs), Self::UnknownMode(rhs)) => lhs == rhs,
-            (Self::NegativeMemAccess(lhs), Self::NegativeMemAccess(rhs)) => lhs == rhs,
-            (Self::WriteToImmediate(lhs), Self::WriteToImmediate(rhs)) => lhs == rhs,
-            (Self::Poisoned, Self::Poisoned) => true,
-            _ => false,
-        }
-    }
 }
 
 impl Display for ErrorState {
@@ -117,7 +103,7 @@ impl Error for ErrorState {}
 #[derive(Clone)]
 /// An intcode interpreter, which provides optional logging of executed instructions.
 pub struct Interpreter {
-    index: u64,
+    index: i64,
     rel_offset: i64,
     code: IntcodeMem,
     poisoned: bool,
@@ -143,16 +129,16 @@ impl fmt::Debug for Interpreter {
     }
 }
 
-impl Index<u64> for Interpreter {
+impl Index<i64> for Interpreter {
     type Output = i64;
 
-    fn index(&self, i: u64) -> &Self::Output {
+    fn index(&self, i: i64) -> &Self::Output {
         self.code.index(i)
     }
 }
 
-impl IndexMut<u64> for Interpreter {
-    fn index_mut(&mut self, i: u64) -> &mut Self::Output {
+impl IndexMut<i64> for Interpreter {
+    fn index_mut(&mut self, i: i64) -> &mut Self::Output {
         self.code.index_mut(i)
     }
 }
@@ -200,12 +186,6 @@ impl Display for ParamMode {
             ParamMode::Immediate => write!(fmt, "#"),
             ParamMode::Relative => write!(fmt, "@"),
         }
-    }
-}
-
-impl From<TryFromIntError> for ErrorState {
-    fn from(err: TryFromIntError) -> Self {
-        Self::NegativeMemAccess(err)
     }
 }
 
@@ -265,6 +245,17 @@ pub enum StepOutcome {
     Stopped(State),
 }
 
+#[repr(transparent)]
+/// Attempted to access the contained negative memory index
+#[derive(Debug, PartialEq)]
+pub struct NegativeMemAccess(pub i64);
+
+impl From<NegativeMemAccess> for ErrorState {
+    fn from(NegativeMemAccess(i): NegativeMemAccess) -> Self {
+        Self::NegativeMemAccess(i)
+    }
+}
+
 impl Interpreter {
     fn parse_op(op: i64) -> Result<(OpCode, [ParamMode; 3]), ErrorState> {
         let modes: [ParamMode; 3] = [
@@ -290,14 +281,25 @@ impl Interpreter {
 
     /// Manually set a memory location
     #[doc(alias("poke", "write"))]
-    pub fn mem_override(&mut self, location: u64, value: i64) {
-        self.code[location] = value;
+    #[inline]
+    pub fn mem_override(&mut self, location: i64, value: i64) -> Result<(), NegativeMemAccess> {
+        if location >= 0 {
+            self.code[location] = value;
+            Ok(())
+        } else {
+            Err(NegativeMemAccess(location))
+        }
     }
 
     /// Get the memory at `address`
     #[doc(alias = "peek")]
-    pub fn mem_get(&self, address: u64) -> i64 {
-        self.code[address]
+    #[inline]
+    pub fn mem_get(&self, address: i64) -> Result<i64, NegativeMemAccess> {
+        if address >= 0 {
+            Ok(self.code[address])
+        } else {
+            Err(NegativeMemAccess(address))
+        }
     }
 
     /// Run a single instruction
@@ -316,6 +318,7 @@ impl Interpreter {
         input: &mut impl Iterator<Item = i64>,
         output: &mut Vec<i64>,
     ) -> Result<StepOutcome, ErrorState> {
+        debug_assert!(self.index >= 0, "uncaught negative instruction index");
         if self.poisoned {
             return Err(ErrorState::Poisoned);
         }
@@ -340,6 +343,15 @@ impl Interpreter {
 
         let (opcode, modes) = Self::parse_op(instruction)?;
 
+        #[inline(always)]
+        const fn i(n: i64) -> Result<i64, NegativeMemAccess> {
+            if n >= 0 {
+                Ok(n)
+            } else {
+                Err(NegativeMemAccess(n))
+            }
+        }
+
         macro_rules! trace {
             ($resolved: expr) => {
                 if let Some(trace) = self.trace.as_mut() {
@@ -351,15 +363,16 @@ impl Interpreter {
         /// Shorthand to get the `$n`th parameter's value
         macro_rules! arg {
             ($n: literal) => {{
+                const { assert!($n > 0) };
                 match modes[$n - 1] {
                     ParamMode::Positional => {
-                        let index = self.code[(self.index + $n)];
-                        self.code[u64::try_from(index)?]
+                        let index = i(self.code[i(self.index + $n)?])?;
+                        self.code[i(index)?]
                     }
-                    ParamMode::Immediate => self.code[self.index + $n],
+                    ParamMode::Immediate => self.code[i(self.index + $n)?],
                     ParamMode::Relative => {
-                        let index = self.code[(self.index + $n)] + self.rel_offset;
-                        self.code[u64::try_from(index)?]
+                        let index = i(self.code[i(self.index + $n)?] + self.rel_offset)?;
+                        self.code[i(index)?]
                     }
                 }
             }};
@@ -369,14 +382,12 @@ impl Interpreter {
         macro_rules! dest {
             ($n: literal) => {{
                 match modes[$n - 1] {
-                    ParamMode::Positional => u64::try_from(self.code[self.index + $n])?,
+                    ParamMode::Positional => self.code[i(self.index + $n)?],
                     ParamMode::Immediate => {
                         self.poisoned = true;
-                        return Err(ErrorState::WriteToImmediate(self.code[self.index + $n]));
+                        return Err(ErrorState::WriteToImmediate(self.code[i(self.index + $n)?]));
                     }
-                    ParamMode::Relative => {
-                        u64::try_from(self.rel_offset + self.code[self.index + $n])?
-                    }
+                    ParamMode::Relative => self.rel_offset + self.code[i(self.index + $n)?],
                 }
             }};
         }
@@ -391,7 +402,7 @@ impl Interpreter {
                 trace!([
                     (self.code[self.index + 1], $a),
                     (self.code[self.index + 2], $b),
-                    (self.code[self.index + 3], dest.cast_signed()),
+                    (self.code[self.index + 3], dest),
                 ]);
                 self[dest] = val;
                 self.index += 4;
@@ -408,7 +419,7 @@ impl Interpreter {
                     (self.code[self.index + 2], dest),
                 ]);
                 if $expr {
-                    self.index = dest.try_into()?;
+                    self.index = i(dest)?;
                 } else {
                     self.index += 3;
                 }
@@ -457,7 +468,7 @@ impl Interpreter {
 
     /// Create a new interpreter. Collects `code` into the starting memory state.
     ///
-    /// Panics if the number of entries exceeds `u64::MAX`
+    /// Panics if the number of entries exceeds `i64::MAX`
     pub fn new(code: impl IntoIterator<Item = i64>) -> Self {
         Self {
             index: 0,

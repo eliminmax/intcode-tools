@@ -50,7 +50,7 @@ enum TracedOp {
 pub struct TracedInstr {
     op: TracedOp,
     op_int: i64,
-    instr_ptr: u64,
+    instr_ptr: i64,
     rel_base: i64,
     packed_modes: PackedModes,
     opcode: OpCode,
@@ -63,7 +63,7 @@ impl TracedInstr {
     }
 
     /// Return the instruction pointer's position when the traced instruction was executed
-    pub fn instr_ptr(&self) -> u64 {
+    pub fn instr_ptr(&self) -> i64 {
         self.instr_ptr
     }
 
@@ -89,7 +89,7 @@ impl TracedInstr {
 
     pub(super) fn build(
         op_int: i64,
-        instr_ptr: u64,
+        instr_ptr: i64,
         rel_base: i64,
         resolved_params: &[(i64, i64)],
     ) -> Self {
@@ -176,7 +176,7 @@ impl Trace {
     pub(crate) fn push(
         &mut self,
         op_int: i64,
-        instr_ptr: u64,
+        instr_ptr: i64,
         rel_base: i64,
         resolved_params: &[(i64, i64)],
     ) {

@@ -7,24 +7,24 @@
 use intcode::prelude::*;
 
 fn part1(mut i: Interpreter) -> i64 {
-    i.mem_override(1, 12);
-    i.mem_override(2, 2);
+    i[1] = 12;
+    i[2] = 2;
     let (output, state) = i.run_through_inputs(std::iter::empty()).unwrap();
     assert_eq!(state, State::Halted);
     assert!(output.is_empty());
-    i.mem_get(0)
+    i[0]
 }
 
 fn part2(base_interp: Interpreter) -> i64 {
     for noun in 0..=99 {
         for verb in 0..=99 {
             let mut i = base_interp.clone();
-            i.mem_override(1, noun);
-            i.mem_override(2, verb);
+            i[1] = noun;
+            i[2] = verb;
             let (output, state) = i.run_through_inputs(std::iter::empty()).unwrap();
             assert_eq!(state, State::Halted);
             assert!(output.is_empty());
-            if i.mem_get(0) == 19690720 {
+            if i.mem_get(0).unwrap() == 19690720 {
                 return 100 * noun + verb;
             }
         }
