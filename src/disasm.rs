@@ -47,7 +47,7 @@ use super::{Interpreter, OpCode};
 /// The approach this function uses is to start at the beginning of `mem_iter`, and treat the first
 /// valid opcode that doesn't have [ignored opcode digits](#ignored-opcode-digits) as the start of an
 /// instruction.
-/// 
+///
 /// ### Example
 ///
 /// ```

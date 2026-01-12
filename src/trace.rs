@@ -301,7 +301,11 @@ impl Display for TracedInstr {
 #[cfg(test)]
 #[test]
 fn test_param_mode_packing() {
-    const MODES: [ParamMode; 3] = [ParamMode::Positional, ParamMode::Immediate, ParamMode::Relative];
+    const MODES: [ParamMode; 3] = [
+        ParamMode::Positional,
+        ParamMode::Immediate,
+        ParamMode::Relative,
+    ];
 
     for a in MODES {
         for b in MODES {
@@ -310,5 +314,4 @@ fn test_param_mode_packing() {
             }
         }
     }
-
 }

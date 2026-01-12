@@ -6,9 +6,9 @@ use ariadne::{Color, Fmt, Label, Report, ReportKind, Source};
 use chumsky::error::{Rich, RichPattern};
 use clap::{Parser, ValueEnum};
 use intcode::asm::{AssemblyError, assemble_ast, build_ast};
-use std::process::ExitCode;
-use std::path::PathBuf;
 use std::io::{self, Write};
+use std::path::PathBuf;
+use std::process::ExitCode;
 
 #[derive(PartialEq, Clone, ValueEnum)]
 enum OutputFormat {
@@ -50,8 +50,10 @@ impl OutputFormat {
 }
 
 const VERSION: &str = concat!(
-    env!("CARGO_PKG_NAME"), '-',
-    env!("CARGO_CRATE_NAME"), '-',
+    env!("CARGO_PKG_NAME"),
+    '-',
+    env!("CARGO_CRATE_NAME"),
+    '-',
     env!("CARGO_PKG_VERSION")
 );
 
@@ -175,7 +177,7 @@ fn report_ast_assembly_err(err: AssemblyError<'_>, file: &str, source: &str) {
 }
 
 fn main() -> ExitCode {
-    use std::fs::{read_to_string, OpenOptions};
+    use std::fs::{OpenOptions, read_to_string};
     use std::io;
     let args = Args::parse();
     let (file, input) = {
