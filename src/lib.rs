@@ -115,7 +115,7 @@ impl Display for ErrorState {
 impl Error for ErrorState {}
 
 #[derive(Clone)]
-/// An intcode interpreter, which provides optional logging of instructions encountered.
+/// An intcode interpreter, which provides optional logging of executed instructions.
 pub struct Interpreter {
     index: u64,
     rel_offset: i64,
