@@ -7,41 +7,8 @@ use intcode::asm::{AssemblyError, assemble_ast, build_ast};
 
 use std::process::ExitCode;
 
-#[cfg(feature = "ariadne")]
 use ariadne::{Color, Fmt, Label, Report, ReportKind, Source};
 
-#[cfg(not(feature = "ariadne"))]
-fn report_ast_build_err(err: Rich<'_, char>, file: &str, _: &str) {
-    eprintln!("error parsing {file}:");
-    if let Some(found) = err.found() {
-        eprintln!("Found token \'{}\'", found.escape_default())
-    }
-
-    let mut expected: Vec<_> = err.expected().collect();
-    // no need to explicitly mention whitespace
-    expected.retain(|pat| !matches!(pat, RichPattern::Label(s) if *s == "inline whitespace"));
-    // make sure that "something else" is the last listed entry
-    expected.sort_unstable_by(|&a, &b| {
-        use std::cmp::Ordering;
-        match (a, b) {
-            (RichPattern::SomethingElse, _) => Ordering::Greater,
-            (_, RichPattern::SomethingElse) => Ordering::Less,
-            (a, b) => a.cmp(b),
-        }
-    });
-    match &expected[..] {
-        &[] => (),
-        &[pat] => eprintln!("Expected \"{}\"", pat),
-        pats => {
-            eprintln!("Expected one of the following:");
-            for pat in pats {
-                eprintln!("- {pat}");
-            }
-        }
-    }
-}
-
-#[cfg(feature = "ariadne")]
 fn report_ast_build_err(err: Rich<'_, char>, file: &str, source: &str) {
     use std::fmt::Write;
 
@@ -93,12 +60,6 @@ fn report_ast_build_err(err: Rich<'_, char>, file: &str, source: &str) {
         .expect("failed to print to stderr");
 }
 
-#[cfg(not(feature = "ariadne"))]
-fn report_ast_assembly_err(err: AssemblyError<'_>, file: &str, _: &str) {
-    eprintln!("error assembling {file}:\t{err}");
-}
-
-#[cfg(feature = "ariadne")]
 fn report_ast_assembly_err(err: AssemblyError<'_>, file: &str, source: &str) {
     match err {
         AssemblyError::UnresolvedLabel { label, span } => {
