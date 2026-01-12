@@ -37,6 +37,8 @@ use std::fmt::{self, Display};
 use std::iter::empty;
 use std::ops::{Index, IndexMut};
 
+pub mod trace;
+
 /// A small module that re-exports items useful when working with the Intcode interpreter
 pub mod prelude {
     pub use crate::{IntcodeAddress, Interpreter, State, StepOutcome};
@@ -181,8 +183,6 @@ impl IndexMut<i64> for Interpreter {
         self.code.index_mut(i)
     }
 }
-
-pub mod trace;
 
 /// Parameter mode for Intcode instruction
 ///
