@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: 0BSD
 
-//! The tracing
+//! module containing the [Trace] type and its related functionality
 use std::fmt::{self, Debug, Display};
 
 use super::{Interpreter, OpCode, ParamMode};
