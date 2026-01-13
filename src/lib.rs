@@ -345,6 +345,35 @@ impl Interpreter {
     ///
     /// ```
     /// use intcode::prelude::*;
+    /// let mut interp = Interpreter::new([1101, 90, 9, 8, 3, 7, 4, -1]);
+    /// let mut out = Vec::new();
+    ///
+    /// // the first instruction is `ADD #90, #9, 8`
+    /// assert_eq!(interp.exec_instruction(&mut empty(), &mut out), Ok(StepOutcome::Running));
+    /// // the second instruction is `IN 7`, but no input was provided.
+    /// assert_eq!(
+    ///     interp.exec_instruction(&mut empty(), &mut out),
+    ///     Ok(StepOutcome::Stopped(State::Awaiting)),
+    /// );
+    ///
+    /// // now try again, but with input available
+    /// assert_eq!(
+    ///     interp.exec_instruction(&mut [8].into_iter(), &mut out),
+    ///     Ok(StepOutcome::Running)
+    /// );
+    ///
+    /// // the third instruction was originally OUT -1, but the address was overwritten by the
+    /// // previous instruction, so it will now read from address 8, where the 1st instruction
+    /// // inserted 99.
+    /// assert!(out.is_empty());
+    /// assert_eq!(interp.exec_instruction(&mut empty(), &mut out), Ok(StepOutcome::Running));
+    /// assert_eq!(out.as_slice(), [99].as_slice());
+    ///
+    /// // finally, the halt instruction
+    /// assert_eq!(
+    ///     interp.exec_instruction(&mut empty(), &mut out),
+    ///     Ok(StepOutcome::Stopped(State::Halted))
+    /// );
     /// ```
     #[doc(alias("step", "run"))]
     pub fn exec_instruction(
