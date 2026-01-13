@@ -250,7 +250,7 @@ impl Display for TracedInstr {
             | TracedOp::Eq((pa, va), (pb, vb), (dest, idx)) => {
                 write!(
                     f,
-                    "[{} {}{pa} (resolves to {va}), {}{pb} (resolves to {vb}), {}{dest} (resolves to {})]",
+                    "[{} {}{pa} (resolves to {va}), {}{pb} (resolves to {vb}), {}{dest} (stored {})]",
                     self.opcode,
                     modes[0],
                     modes[1],
