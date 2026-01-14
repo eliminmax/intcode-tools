@@ -30,3 +30,6 @@ disasm = [ "asm", "dep:chumsky" ]
 asm = [ "dep:chumsky" ]
 ariadne = [ "dep:ariadne" ]
 clap = [ "dep:clap" ]
+
+[dev-dependencies]
+either = "1.15.0"

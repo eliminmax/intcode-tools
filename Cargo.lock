@@ -243,6 +243,7 @@ dependencies = [
  "ariadne",
  "chumsky",
  "clap",
+ "either",
  "itertools",
 ]
 
