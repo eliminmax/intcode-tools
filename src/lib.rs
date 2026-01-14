@@ -233,6 +233,17 @@ pub enum ParamMode {
     Relative = 2,
 }
 
+impl ParamMode {
+    /// Extract the parameter modes from the provided opcode [i64]
+    pub fn extract(op_int: i64) -> Result<[Self; 3], UnknownMode> {
+        Ok([
+            ((op_int / 100) % 10).try_into()?,
+            ((op_int / 1000) % 10).try_into()?,
+            ((op_int / 10000) % 10).try_into()?,
+        ])
+    }
+}
+
 impl Display for ParamMode {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -244,14 +255,28 @@ impl Display for ParamMode {
 }
 
 impl TryFrom<i64> for ParamMode {
-    type Error = ErrorState;
+    type Error = UnknownMode;
     fn try_from(i: i64) -> Result<Self, Self::Error> {
         match i {
             0 => Ok(ParamMode::Positional),
             1 => Ok(ParamMode::Immediate),
             2 => Ok(ParamMode::Relative),
-            _ => Err(Self::Error::UnknownMode(i)),
+            _ => Err(Self::Error {
+                mode_digit: (i % 10) as i8,
+            }),
         }
+    }
+}
+
+#[derive(Debug)]
+/// An unknown mode was specified in an instruction
+pub struct UnknownMode {
+    mode_digit: i8,
+}
+
+impl From<UnknownMode> for ErrorState {
+    fn from(UnknownMode { mode_digit: i }: UnknownMode) -> Self {
+        Self::UnknownMode(i as i64)
     }
 }
 
@@ -272,6 +297,25 @@ pub enum OpCode {
     Eq = 8,
     Rbo = 9,
     Halt = 99,
+}
+
+impl TryFrom<i64> for OpCode {
+    type Error = i64;
+    fn try_from(i: i64) -> Result<Self, Self::Error> {
+        match i {
+            1 => Ok(Self::Add),
+            2 => Ok(Self::Mul),
+            3 => Ok(Self::In),
+            4 => Ok(Self::Out),
+            5 => Ok(Self::Jnz),
+            6 => Ok(Self::Jz),
+            7 => Ok(Self::Lt),
+            8 => Ok(Self::Eq),
+            9 => Ok(Self::Rbo),
+            99 => Ok(Self::Halt),
+            _ => Err(i),
+        }
+    }
 }
 
 impl Display for OpCode {

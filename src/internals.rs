@@ -18,26 +18,10 @@ impl Interpreter {
     // B=1: 2nd parameter is in immediate mode
     // A=0: 3rd parameter is in positional mode
     pub(crate) fn parse_op(op: i64) -> Result<(OpCode, [ParamMode; 3]), ErrorState> {
-        let modes: [ParamMode; 3] = [
-            ((op / 100) % 10).try_into()?,   // C (hundreds place)
-            ((op / 1000) % 10).try_into()?,  // B (thousands place)
-            ((op / 10000) % 10).try_into()?, // A (ten thousands place)
-        ];
-        match op % 100 {
-            ..-99 | 100.. => unreachable!("modulo makes this impossible"),
-            -99..=0 | 10..99 => Err(ErrorState::UnrecognizedOpcode(op)),
-            1 => Ok(OpCode::Add),
-            2 => Ok(OpCode::Mul),
-            3 => Ok(OpCode::In),
-            4 => Ok(OpCode::Out),
-            5 => Ok(OpCode::Jnz),
-            6 => Ok(OpCode::Jz),
-            7 => Ok(OpCode::Lt),
-            8 => Ok(OpCode::Eq),
-            9 => Ok(OpCode::Rbo),
-            99 => Ok(OpCode::Halt),
-        }
-        .map(|op| (op, modes))
+        Ok((
+            OpCode::try_from(op % 100).map_err(|_| ErrorState::UnrecognizedOpcode(op))?,
+            ParamMode::extract(op)?,
+        ))
     }
 
     /// Wraps [Interpreter::mem_get], marking the interpreter as poisoned on error
