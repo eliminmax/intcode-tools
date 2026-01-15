@@ -24,7 +24,7 @@ IAL uses a line-based syntax. Source code is encoded as UTF-8 text.
 
 ## Lines
 
-Each line has 3 components - a [label](#labels), a [directive](#directives), and a [comment](#comments). Any or all of them can be omitted.
+Each line has 3 components - one of more [labels](#labels), an optional [directive](#directives), and an optional [comment](#comments).
 
 Taking a cue from [NASM][nasm], a label is an identifier followed by a colon (`:`), and the comment starts with `;`:
 
@@ -34,7 +34,9 @@ label: directive ; comment
 
 ### Labels
 
-A label is a unique[^label-uniqueness] identifer which can be used to refer to the index of the next integer in the Intcode output. It can be thought of as a named index.
+A label is a unique[^label-uniqueness] identifer which can be used to refer to the index of the next integer in the Intcode output. It can be thought of as a name for that index.
+
+Each label is immediately followed by a colon, without any whitespace. More than one label can exist on the same line.
 
 As an example, the following code starts out with a single `ADD` instruction, which sets the initially-zeroed opcode integer of the following instruction to a `HALT` instruction.
 
