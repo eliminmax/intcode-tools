@@ -5,9 +5,10 @@
 use ariadne::{Color, Fmt, Label, Report, ReportKind, Source};
 use chumsky::error::{Rich, RichPattern};
 use clap::{Parser, ValueEnum};
-use intcode::asm::{AssemblyError, assemble_ast, build_ast};
+use intcode::asm::{AssemblyError, assemble_ast, assemble_with_debug, build_ast};
+use std::fs::{OpenOptions, read_to_string};
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 #[derive(PartialEq, Clone, ValueEnum)]
@@ -72,6 +73,9 @@ struct Args {
     #[arg(help = OUTPUT_HELP.split_at(37).0)]
     #[arg(long_help = OUTPUT_HELP)]
     output: Option<PathBuf>,
+    #[arg(help = "output debug info")]
+    #[arg(short = 'g', long = "debug-file")]
+    debug: Option<PathBuf>,
     #[arg(help = "Output format for the assembled intcode")]
     #[arg(short, long)]
     #[arg(default_value = "ascii")]
@@ -178,9 +182,15 @@ fn report_ast_assembly_err(err: AssemblyError<'_>, file: &str, source: &str) {
     .unwrap();
 }
 
+fn open_writable(outfile: &Path) -> io::Result<impl Write> {
+    OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(outfile)
+}
+
 fn main() -> ExitCode {
-    use std::fs::{OpenOptions, read_to_string};
-    use std::io;
     let args = Args::parse();
     let (file, input) = {
         use std::borrow::Cow;
@@ -209,13 +219,41 @@ fn main() -> ExitCode {
         }
     };
 
-    let intcode = match assemble_ast(ast) {
-        Ok(code) => code,
-        Err(e) => {
-            report_ast_assembly_err(e, &file, &input);
-            return ExitCode::FAILURE;
+    let intcode = if let Some(debug_path) = args.debug.as_deref() {
+        match assemble_with_debug(ast) {
+            Ok((code, debug)) => {
+                match open_writable(debug_path) {
+                    Ok(w) => {
+                        if let Err(e) = debug.write(w) {
+                            eprintln!(
+                                "Failed to write debug info to {}: {e}",
+                                debug_path.display()
+                            );
+                            return ExitCode::FAILURE;
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to open {} for writing: {e}", debug_path.display());
+                        return ExitCode::FAILURE;
+                    }
+                }
+                code
+            }
+            Err(e) => {
+                report_ast_assembly_err(e, &file, &input);
+                return ExitCode::FAILURE;
+            }
+        }
+    } else {
+        match assemble_ast(ast) {
+            Ok(code) => code,
+            Err(e) => {
+                report_ast_assembly_err(e, &file, &input);
+                return ExitCode::FAILURE;
+            }
         }
     };
+
     if let Some(outfile) = args.output.as_deref() {
         let writer = match OpenOptions::new()
             .create(true)
