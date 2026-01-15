@@ -18,7 +18,7 @@ impl DebugInfo {
     pub fn write(self, mut f: impl Write) -> Result<(), Either<io::Error, TryFromIntError>> {
         let DebugInfo { labels, directives } = self;
 
-        let output_len = MAGIC.len() + 17 + directives.len() * 24 + labels.len() * 33;
+        let output_len = MAGIC.len() + 17 + labels.len() * 24 + directives.len() * 33;
         let mut buffer = Vec::with_capacity(output_len);
 
         macro_rules! write_usize {
@@ -36,7 +36,6 @@ impl DebugInfo {
         write_usize!(labels.len());
 
         for (label, addr) in labels {
-            write_usize!(label.start);
             write_usize!(label.start);
             write_usize!(label.end);
             buffer.extend(addr.to_le_bytes());
