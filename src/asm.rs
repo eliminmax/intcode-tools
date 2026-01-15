@@ -130,6 +130,56 @@ pub mod ast_prelude {
 /// Small utility functions and macros for making it less painful to work with the AST
 pub mod ast_util;
 
+/// Module containing implementations of [DebugInfo::write] and [DebugInfo::read]
+///
+/// This module provides the [write][DebugInfo::write] method and [read][DebugInfo::read] function
+/// to convert [DebugInfo] to and from an opaque (but trivial) on-disk format
+pub mod debug_encode;
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+/// The type of a [Directive]
+#[allow(missing_docs, reason = "trivial")]
+pub enum DirectiveKind {
+    Instruction = 0,
+    Data = 1,
+    Ascii = 2,
+}
+
+impl TryFrom<u8> for DirectiveKind {
+    type Error = u8;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Instruction),
+            1 => Ok(Self::Data),
+            2 => Ok(Self::Ascii),
+            _ => Err(value),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+/// Debug info about a given directive
+pub struct DirectiveDebug {
+    /// Type of the directive
+    pub kind: DirectiveKind,
+    /// span within the source code of the directive
+    pub src_span: SimpleSpan,
+    /// span within the output of the directive
+    pub output_span: SimpleSpan,
+}
+
+#[non_exhaustive]
+/// Debug info generated when assembling source code with [assemble_with_debug]
+///
+/// The debug data is designed to work on spans of source and output, not on
+pub struct DebugInfo {
+    /// Mapping of labels' spans in the source code to their resolved addresses in the output
+    pub labels: Box<[(SimpleSpan, i64)]>,
+    /// Boxed slice of debug info about each directive
+    pub directives: Box<[DirectiveDebug]>,
+}
+
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq)]
 /// A binary operatior within an [`Expr::BinOp`]
@@ -556,6 +606,7 @@ pub struct Line<'a> {
     /// the directive for the line, if applicable
     pub inner: Option<Spanned<Directive<'a>>>,
 }
+
 impl Directive<'_> {
     /// return the number of integers that this [`Directive`] will resolve to.
     pub fn size(&self) -> Result<i64, usize> {
@@ -563,6 +614,13 @@ impl Directive<'_> {
             Directive::Data(exprs) => exprs.len().try_into().map_err(|_| exprs.len()),
             Directive::Ascii(text) => text.len().try_into().map_err(|_| text.len()),
             Directive::Instruction(instr) => Ok(instr.size()),
+        }
+    }
+    fn dtype(&self) -> DirectiveKind {
+        match self {
+            Directive::Data(_) => DirectiveKind::Data,
+            Directive::Ascii(_) => DirectiveKind::Ascii,
+            Directive::Instruction(_) => DirectiveKind::Instruction,
         }
     }
 }
@@ -620,27 +678,15 @@ pub fn build_ast<'a>(code: &'a str) -> Result<Vec<Line<'a>>, Vec<Rich<'a, char>>
     parsers::grammar().parse(code).into_result()
 }
 
-/// Assemble an AST in the form of a [`Vec<Line>`] into a [`Vec<i64>`]
-///
-/// On failure, returns an [`AssemblyError`].
-///
-/// # Example
-///
-/// ```
-/// use intcode::asm::{assemble_ast, Line, Directive, Instr, Parameter};
-/// use chumsky::prelude::{Spanned, SimpleSpan};
-///
-/// let inner = Directive::Instruction(Box::new(Instr::Halt));
-///
-/// let ast = vec![
-///     Line { label: None, inner: Some(Spanned { inner, span: SimpleSpan::default() }) }
-/// ];
-///
-/// assert_eq!(assemble_ast(ast).unwrap(), vec![99]);
-/// ```
-pub fn assemble_ast<'a>(code: Vec<Line<'a>>) -> Result<Vec<i64>, AssemblyError<'a>> {
+type AssembleInnerRet = (Vec<i64>, Vec<(SimpleSpan, i64)>, Vec<DirectiveDebug>);
+
+/// common implementation of [assemble_ast] and [assemble_with_debug].
+fn assemble_inner<'a, const DEBUG: bool>(
+    code: Vec<Line<'a>>,
+) -> Result<AssembleInnerRet, AssemblyError<'a>> {
     let mut labels: HashMap<&'a str, (i64, SimpleSpan)> = HashMap::new();
     let mut index = 0;
+    let mut directives = Vec::new();
     for line in code.iter() {
         if let Some(Spanned { inner: label, span }) = line.label
             && let Some((_, old_span)) = labels.insert(label, (index, span))
@@ -660,6 +706,14 @@ pub fn assemble_ast<'a>(code: Vec<Line<'a>>) -> Result<Vec<i64>, AssemblyError<'
         }
     }
 
+    let label_spans = if DEBUG {
+        labels
+            .values()
+            .map(|&(index, span)| (span, index))
+            .collect()
+    } else {
+        Vec::new()
+    };
     let labels = labels
         .into_iter()
         .map(|(label, (index, _span))| (label, index))
@@ -668,14 +722,66 @@ pub fn assemble_ast<'a>(code: Vec<Line<'a>>) -> Result<Vec<i64>, AssemblyError<'
     let mut v = Vec::with_capacity(index.try_into().unwrap_or_default());
 
     for line in code {
-        line.encode_into(&mut v, &labels)?;
+        if DEBUG {
+            if let Some(spanned) = line.inner.as_ref() {
+                let kind = spanned.inner.dtype();
+                let src_span = spanned.span;
+                let start = v.len();
+                line.encode_into(&mut v, &labels)?;
+                let end = v.len();
+                directives.push(DirectiveDebug {
+                    kind,
+                    src_span,
+                    output_span: SimpleSpan {
+                        start,
+                        end,
+                        context: (),
+                    },
+                });
+            }
+        } else {
+            line.encode_into(&mut v, &labels)?;
+        }
     }
 
-    Ok(v)
+    Ok((v, label_spans, directives))
+}
+
+/// Assemble the AST, the same as [assemble_ast], but return debug info
+pub fn assemble_with_debug<'a>(
+    code: Vec<Line<'a>>,
+) -> Result<(Vec<i64>, DebugInfo), AssemblyError<'a>> {
+    assemble_inner::<true>(code).map(|(output, labels, directives)| {
+        let labels = labels.into_boxed_slice();
+        let directives = directives.into_boxed_slice();
+        (output, DebugInfo { labels, directives })
+    })
+}
+
+/// Assemble an AST in the form of a [`Vec<Line>`] into a [`Vec<i64>`]
+///
+/// On failure, returns an [`AssemblyError`].
+///
+/// # Example
+///
+/// ```
+/// use intcode::asm::{assemble_ast, Line, Directive, Instr, Parameter};
+/// use chumsky::prelude::{Spanned, SimpleSpan};
+///
+/// let inner = Directive::Instruction(Box::new(Instr::Halt));
+///
+/// let ast = vec![
+///     Line { label: None, inner: Some(Spanned { inner, span: SimpleSpan::default() }) }
+/// ];
+///
+/// assert_eq!(assemble_ast(ast).unwrap(), vec![99]);
+/// ```
+pub fn assemble_ast<'a>(code: Vec<Line<'a>>) -> Result<Vec<i64>, AssemblyError<'a>> {
+    assemble_inner::<false>(code).map(|(output, _, _)| output)
 }
 
 /// An error that indicates where in the assembly process a failure occured, and wraps around the
-/// error type for that part of the process
+/// error type for that part of the process.
 #[derive(Debug)]
 pub enum AsmError<'a> {
     /// Failure to build the AST
