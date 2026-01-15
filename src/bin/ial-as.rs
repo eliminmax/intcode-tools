@@ -217,7 +217,12 @@ fn main() -> ExitCode {
         }
     };
     if let Some(outfile) = args.output.as_deref() {
-        let writer = match OpenOptions::new().write(true).open(outfile) {
+        let writer = match OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(outfile)
+        {
             Ok(w) => w,
             Err(e) => {
                 eprintln!("Failed to open {} for writing: {e}.", outfile.display());
