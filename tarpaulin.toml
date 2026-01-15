@@ -1,0 +1,10 @@
+# SPDX-FileCopyrightText: 2026 Eli Array Minkoff
+#
+# SPDX-License-Identifier: 0BSD
+[test_config]
+locked = true
+offline = true
+engine = "Llvm"
+test-timeout = "1m"
+target-dir = ".tarpaulin"
+skip-clean = true
