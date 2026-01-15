@@ -784,7 +784,7 @@ pub fn assemble_ast<'a>(code: Vec<Line<'a>>) -> Result<Vec<i64>, AssemblyError<'
 /// An error that indicates where in the assembly process a failure occured, and wraps around the
 /// error type for that part of the process.
 #[derive(Debug)]
-pub enum AsmError<'a> {
+pub enum GeneralAsmError<'a> {
     /// Failure to build the AST
     BuildAst(Vec<Rich<'a, char>>),
     /// Failure to assemble the parsed AST
@@ -795,8 +795,9 @@ pub enum AsmError<'a> {
 ///
 /// This is a thin convenience wrapper around [`build_ast`] and [`assemble_ast`].
 #[inline]
-pub fn assemble<'a>(code: &'a str) -> Result<Vec<i64>, AsmError<'a>> {
-    assemble_ast(build_ast(code).map_err(AsmError::BuildAst)?).map_err(AsmError::Assemble)
+pub fn assemble<'a>(code: &'a str) -> Result<Vec<i64>, GeneralAsmError<'a>> {
+    assemble_ast(build_ast(code).map_err(GeneralAsmError::BuildAst)?)
+        .map_err(GeneralAsmError::Assemble)
 }
 
 mod fmt_impls;
