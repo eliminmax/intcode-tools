@@ -15,7 +15,8 @@ const VERSION: u8 = 0;
 
 impl DebugInfo {
     /// Write the debug info into an opaque on-disk format
-    pub fn write(self, mut f: impl Write) -> Result<(), Either<io::Error, TryFromIntError>> {
+    pub fn write(self, f: impl Write) -> Result<(), Either<io::Error, TryFromIntError>> {
+        use flate2::write::ZlibEncoder;
         let DebugInfo { labels, directives } = self;
 
         let output_len = MAGIC.len() + 17 + labels.len() * 24 + directives.len() * 33;
@@ -51,16 +52,18 @@ impl DebugInfo {
             write_usize!(dir.output_span.end);
         }
         debug_assert_eq!(buffer.len(), output_len);
-        f.write_all(&buffer).map_err(Either::Left)
+        ZlibEncoder::new(f, flate2::Compression::best()).write_all(&buffer).map_err(Either::Left)
     }
 
     /// Read the debug info from an opaque on-disk format
-    pub fn read(mut f: impl Read) -> Result<Self, DebugInfoReadError> {
+    pub fn read(f: impl Read) -> Result<Self, DebugInfoReadError> {
+        use flate2::read::ZlibDecoder;
         use DebugInfoReadError as Error;
+        let mut reader = ZlibDecoder::new(f);
         let mut buf: [u8; 8] = [0; 8];
 
         let mut read = |buf: &mut [u8]| -> Result<(), Error> {
-            f.read_exact(buf).map_err(DebugInfoReadError::IoError)
+            reader.read_exact(buf).map_err(DebugInfoReadError::IoError)
         };
 
         macro_rules! read_usize {
