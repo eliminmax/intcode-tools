@@ -2,7 +2,9 @@
 //
 // SPDX-License-Identifier: 0BSD
 
-#![cfg(feature = "disasm")]
+//! Disassembler-related functionality
+//!
+//! See [disassemble] for documentation
 
 use super::asm::ast_prelude::*;
 use super::asm::ast_util::*;

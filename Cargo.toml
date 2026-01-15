@@ -12,23 +12,20 @@ name = "intcode_ascii"
 
 [[bin]]
 name = "ial-dis"
-required-features = [ "disasm", "clap" ]
+required-features = [ "bin_deps" ]
 
 [[bin]]
 name = "ial-as"
-required-features = [ "asm", "clap", "ariadne" ]
+required-features = [ "bin_deps" ]
 
 [dependencies]
 ariadne = { version = "0.6.0", features = ["auto-color"], optional = true }
-chumsky = { version = "0.12.0", optional = true }
 clap = { version = "4.5.54", features = ["derive"], optional = true }
+chumsky = { version = "0.12.0" }
 itertools = { version = "0.14.0" }
 either = "1.15.0"
 flate2 = "1.1.8"
 
 [features]
-default = [ "asm", "disasm" ]
-disasm = [ "asm", "dep:chumsky" ]
-asm = [ "dep:chumsky" ]
-ariadne = [ "dep:ariadne" ]
-clap = [ "dep:clap" ]
+default = [ ]
+bin_deps = [ "dep:ariadne", "dep:clap" ]

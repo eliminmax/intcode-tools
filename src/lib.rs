@@ -20,9 +20,8 @@
 //! );
 //! ```
 //!
-//! Additionally, if the `asm` feature is enabled, tools to work with a minimal assembly language
-//! for Intcode are provided in the [asm] module, and if the `disasm` feature is enabled, then a
-//! minimal [dissasemble][disasm::disassemble] function is provided.
+//! Additionally, the [asm] module provides tools to work with a minimal assembly language for
+//! Intcode, and the [disasm] module provides a disassembler function.
 //!
 //! [Opcodes]: https://esolangs.org/wiki/Intcode#Opcodes
 //! [Parameter Modes]: https://esolangs.org/wiki/Intcode#Parameter_Modes
@@ -47,12 +46,9 @@ pub mod prelude {
     pub use std::iter::empty;
 }
 
-#[cfg(feature = "asm")]
 pub mod asm;
 
-mod disasm;
-#[cfg(feature = "disasm")]
-pub use disasm::disassemble;
+pub mod disasm;
 
 use mmu::IntcodeMem;
 
