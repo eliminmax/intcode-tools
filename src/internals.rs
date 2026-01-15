@@ -17,9 +17,9 @@ impl Interpreter {
     // C=2: 1st parameter is in relative mode
     // B=1: 2nd parameter is in immediate mode
     // A=0: 3rd parameter is in positional mode
-    pub(crate) fn parse_op(op: i64) -> Result<(OpCode, [ParamMode; 3]), ErrorState> {
+    pub(crate) fn parse_op(op: i64) -> Result<(OpCode, [ParamMode; 3]), InterpreterError> {
         Ok((
-            OpCode::try_from(op % 100).map_err(|_| ErrorState::UnrecognizedOpcode(op))?,
+            OpCode::try_from(op % 100).map_err(|_| InterpreterError::UnrecognizedOpcode(op))?,
             ParamMode::extract(op)?,
         ))
     }
@@ -56,19 +56,19 @@ impl Interpreter {
     /// Processes turns `address` into a concrete index according to `mode`.
     /// If that would involve accessing memory at a negative index, or if `mode` is
     /// [ParamMode::Immediate], it instead marks `self` as poisoned and returns the error
-    pub(crate) fn resolve_dest(&mut self, mode: ParamMode, offset: i64) -> Result<i64, ErrorState> {
+    pub(crate) fn resolve_dest(&mut self, mode: ParamMode, offset: i64) -> Result<i64, InterpreterError> {
         match (mode, self.code[self.index + offset]) {
             (ParamMode::Positional, n @ ..=-1) => {
                 self.poisoned = true;
-                Err(ErrorState::NegativeMemAccess(n))
+                Err(InterpreterError::NegativeMemAccess(n))
             }
             (ParamMode::Relative, n) if n + self.rel_offset < 0 => {
                 self.poisoned = true;
-                Err(ErrorState::NegativeMemAccess(n))
+                Err(InterpreterError::NegativeMemAccess(n))
             }
             (ParamMode::Immediate, n) => {
                 self.poisoned = true;
-                Err(ErrorState::WriteToImmediate(n))
+                Err(InterpreterError::WriteToImmediate(n))
             }
             (ParamMode::Positional, n) => Ok(n),
             (ParamMode::Relative, n) => Ok(n + self.rel_offset),
@@ -80,7 +80,7 @@ impl Interpreter {
         &mut self,
         modes: [ParamMode; 3],
         operation: impl Fn(i64, i64) -> i64,
-    ) -> Result<StepOutcome, ErrorState> {
+    ) -> Result<StepOutcome, InterpreterError> {
         let a = self.resolve_param(modes[0], 1)?;
         let b = self.resolve_param(modes[1], 2)?;
         let dest = self.resolve_dest(modes[2], 3)?;
@@ -99,7 +99,7 @@ impl Interpreter {
         &mut self,
         modes: [ParamMode; 3],
         func: impl Fn(i64) -> bool,
-    ) -> Result<StepOutcome, ErrorState> {
+    ) -> Result<StepOutcome, InterpreterError> {
         let expr = self.resolve_param(modes[0], 1)?;
         let dest = self.resolve_param(modes[1], 2)?;
         self.trace([
@@ -110,7 +110,7 @@ impl Interpreter {
             self.index = dest;
             if dest < 0 {
                 self.poisoned = true;
-                return Err(ErrorState::JumpToNegative(dest));
+                return Err(InterpreterError::JumpToNegative(dest));
             }
         } else {
             self.index += 3;

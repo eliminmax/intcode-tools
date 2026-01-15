@@ -69,7 +69,7 @@ pub enum State {
 
 #[derive(Debug, PartialEq)]
 /// An error occured when executing an intcode instruction
-pub enum ErrorState {
+pub enum InterpreterError {
     /// An invalid opcode was encountered
     UnrecognizedOpcode(i64),
     /// An unknown parameter mode was encountered
@@ -84,26 +84,26 @@ pub enum ErrorState {
     Poisoned,
 }
 
-impl Display for ErrorState {
+impl Display for InterpreterError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ErrorState::UnrecognizedOpcode(n) => write!(f, "encountered unrecognized opcode {n}"),
-            ErrorState::UnknownMode(mode) => write!(f, "encountered unknown parameter mode {mode}"),
-            ErrorState::NegativeMemAccess(e) => {
+            InterpreterError::UnrecognizedOpcode(n) => write!(f, "encountered unrecognized opcode {n}"),
+            InterpreterError::UnknownMode(mode) => write!(f, "encountered unknown parameter mode {mode}"),
+            InterpreterError::NegativeMemAccess(e) => {
                 write!(f, "could not convert index to unsigned address: {e}")
             }
-            ErrorState::JumpToNegative(n) => {
+            InterpreterError::JumpToNegative(n) => {
                 write!(f, "jumpped to negative address {n}")
             }
-            ErrorState::WriteToImmediate(i) => {
+            InterpreterError::WriteToImmediate(i) => {
                 write!(f, "code attempted to write to immediate {i}")
             }
-            ErrorState::Poisoned => write!(f, "tried to reuse an interpreter after a fatal error"),
+            InterpreterError::Poisoned => write!(f, "tried to reuse an interpreter after a fatal error"),
         }
     }
 }
 
-impl Error for ErrorState {}
+impl Error for InterpreterError {}
 
 impl Display for NegativeMemAccess {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -270,7 +270,7 @@ pub struct UnknownMode {
     mode_digit: i8,
 }
 
-impl From<UnknownMode> for ErrorState {
+impl From<UnknownMode> for InterpreterError {
     fn from(UnknownMode { mode_digit: i }: UnknownMode) -> Self {
         Self::UnknownMode(i as i64)
     }
@@ -345,7 +345,7 @@ pub enum StepOutcome {
 #[derive(Debug, PartialEq)]
 pub struct NegativeMemAccess(pub i64);
 
-impl From<NegativeMemAccess> for ErrorState {
+impl From<NegativeMemAccess> for InterpreterError {
     fn from(NegativeMemAccess(i): NegativeMemAccess) -> Self {
         Self::NegativeMemAccess(i)
     }
@@ -378,7 +378,7 @@ impl Interpreter {
 
     /// Run a single instruction
     ///
-    /// On an error, returns an [Err] containing the appropriate [ErrorState]
+    /// On an error, returns an [Err] containing the appropriate [InterpreterError]
     /// Otherwise, returns an [Ok] containing the [StepOutcome]
     ///
     /// # Example
@@ -420,9 +420,9 @@ impl Interpreter {
         &mut self,
         input: &mut impl Iterator<Item = i64>,
         output: &mut Vec<i64>,
-    ) -> Result<StepOutcome, ErrorState> {
+    ) -> Result<StepOutcome, InterpreterError> {
         if self.poisoned {
-            return Err(ErrorState::Poisoned);
+            return Err(InterpreterError::Poisoned);
         }
 
         if self.halted {
@@ -490,11 +490,11 @@ impl Interpreter {
     /// If the interpreter halted, returns `Ok((v, s))`, where `v` is a [`Vec<i64>`] containing all
     /// outputs that it found, and `s` is the [`State`] at the time it stopped.
     ///
-    /// On error, it will return an [`ErrorState`] that reflects the error.
+    /// On error, it will return an [`InterpreterError`] that reflects the error.
     pub fn run_through_inputs(
         &mut self,
         inputs: impl IntoIterator<Item = i64>,
-    ) -> Result<(Vec<i64>, State), ErrorState> {
+    ) -> Result<(Vec<i64>, State), InterpreterError> {
         let mut outputs = Vec::new();
         let mut inputs = inputs.into_iter();
         loop {
@@ -508,7 +508,7 @@ impl Interpreter {
 
     /// Pre-compute as much as possible - that is, run every up to, but not including, the first
     /// `IN`, `OUT`, or `HALT` instruction, bubbling up any errors that occur.
-    pub fn precompute(&mut self) -> Result<(), ErrorState> {
+    pub fn precompute(&mut self) -> Result<(), InterpreterError> {
         while Self::parse_op(self.code[self.index])
             .is_ok_and(|(opcode, _)| !matches!(opcode, OpCode::In | OpCode::Out | OpCode::Halt))
         {
@@ -527,7 +527,7 @@ fn missing_input_recoverable() {
 
     let failed_run = interpreter.run_through_inputs(empty());
 
-    // make sure that the failure returned the right ErrorState and left both `outputs` and
+    // make sure that the failure returned the right InterpreterError and left both `outputs` and
     // `interpreter` unchanged
     assert_eq!(failed_run, Ok((vec![], State::Awaiting)));
     assert_eq!(interpreter, old_state);

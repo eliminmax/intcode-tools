@@ -61,7 +61,7 @@ pub enum AsciiError {
     IoError(std::io::Error),
     InvalidAsciiChar(char),
     InvalidAsciiInt(i64),
-    InterpreterError(ial::ErrorState),
+    InterpreterError(ial::InterpreterError),
 }
 
 impl Error for AsciiError {}
@@ -76,8 +76,8 @@ impl Display for AsciiError {
     }
 }
 
-impl From<ial::ErrorState> for AsciiError {
-    fn from(e: ial::ErrorState) -> Self {
+impl From<ial::InterpreterError> for AsciiError {
+    fn from(e: ial::InterpreterError) -> Self {
         Self::InterpreterError(e)
     }
 }

@@ -23,7 +23,7 @@ macro_rules! interp {
 fn run_to_end(
     interp: &mut Interpreter,
     inputs: impl IntoIterator<Item = i64>,
-) -> Result<Vec<i64>, Either<ial::ErrorState, Awaiting>> {
+) -> Result<Vec<i64>, Either<ial::InterpreterError, Awaiting>> {
     let (output, state) = interp.run_through_inputs(inputs).map_err(Either::Left)?;
     if state == State::Halted {
         Ok(output)
