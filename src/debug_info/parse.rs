@@ -95,10 +95,15 @@ impl DebugInfo {
             let len = read_usize!();
             let mut raw_label_text = vec![0; len];
             read(raw_label_text.as_mut_slice())?;
+            // because there's no str::from_boxed_utf8 that validates, but there is an unsafe
+            // unchecked `std::str::from_boxed_utf8_unchecked`, first validate, then convert within
+            // an unsafe block
+            let raw_label_text = raw_label_text.into_boxed_slice();
             let label_text = if str::from_utf8(&raw_label_text).is_ok() {
-                unsafe { String::from_utf8_unchecked(raw_label_text) }.into_boxed_str()
+                // SAFETY: Already validated
+                unsafe { std::str::from_boxed_utf8_unchecked(raw_label_text) }
             } else {
-                return Err(Error::NonUtf8Label(raw_label_text.into_boxed_slice()));
+                return Err(Error::NonUtf8Label(raw_label_text));
             };
 
             let start = read_usize!();
