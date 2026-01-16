@@ -22,7 +22,9 @@ pub struct DirectiveDebug {
 
 #[non_exhaustive]
 #[derive(Debug)]
-/// Debug info generated when assembling source code with [assemble_with_debug]
+/// Debug info generated when assembling source code with [`assemble_with_debug`]
+///
+/// [`assemble_with_debug`]: crate::asm::assemble_with_debug
 pub struct DebugInfo {
     /// Mapping of labels' spans in the source code to their resolved addresses in the output
     pub labels: Box<[(Spanned<Box<str>>, i64)]>,
@@ -33,6 +35,8 @@ pub struct DebugInfo {
 #[non_exhaustive]
 #[derive(Debug, PartialEq, Clone, Copy)]
 /// The type of a [Directive]
+///
+/// [Directive]: crate::asm::Directive
 #[allow(missing_docs, reason = "trivial")]
 pub enum DirectiveKind {
     Instruction = 0,
