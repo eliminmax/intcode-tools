@@ -50,13 +50,7 @@ impl OutputFormat {
     }
 }
 
-const VERSION: &str = concat!(
-    env!("CARGO_PKG_NAME"),
-    '-',
-    env!("CARGO_CRATE_NAME"),
-    '-',
-    env!("CARGO_PKG_VERSION")
-);
+const VERSION: &str = concat!(env!("CARGO_CRATE_NAME"), '-', env!("CARGO_PKG_VERSION"));
 
 const INPUT_HELP: &str = "Input file containing the assembly\nuses stdin if unset or set to '-'";
 const OUTPUT_HELP: &str =
