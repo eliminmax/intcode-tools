@@ -8,9 +8,17 @@ const MAGIC: [u8; 8] = *b"\0IALDBG\0";
 const VERSION: u8 = 0;
 use super::*;
 use crate::asm::ast_util::span;
+use chumsky::text::Char;
 use either::Either;
 use std::io::{self, Read, Write};
 use std::num::TryFromIntError;
+
+fn ident(text: &str) -> bool {
+    let mut chars = text.chars();
+    let head = chars.next();
+    head.is_some_and(|c| c.is_ident_start()) && chars.all(|c| c.is_ident_continue())
+}
+
 impl DebugInfo {
     /// Write the debug info into an opaque on-disk format
     pub fn write(self, f: impl Write) -> Result<(), Either<io::Error, TryFromIntError>> {
@@ -106,6 +114,10 @@ impl DebugInfo {
                 return Err(Error::NonUtf8Label(raw_label_text));
             };
 
+            if !ident(&label_text) {
+                return Err(Error::InvalidLabel(label_text));
+            }
+
             let start = read_usize!();
             let end = read_usize!();
             let addr = read_i64!();
@@ -192,6 +204,8 @@ pub enum DebugInfoReadError {
     },
     /// A label's text data wasn't UTF-8-encoded
     NonUtf8Label(Box<[u8]>),
+    /// A label was valid UTF-8, but was not a valid identifier
+    InvalidLabel(Box<str>),
 }
 
 use std::error::Error;
@@ -218,9 +232,7 @@ impl Display for DebugInfoReadError {
                 write!(f, "unsupported version: {version}")
             }
             DebugInfoReadError::IoError(error) => Display::fmt(error, f),
-            DebugInfoReadError::IntSize(try_from_int_error) => {
-                Display::fmt(try_from_int_error, f)
-            }
+            DebugInfoReadError::IntSize(try_from_int_error) => Display::fmt(try_from_int_error, f),
             DebugInfoReadError::BadDirectiveByte(byte) => {
                 write!(f, "Bad directive byte: 0x{byte:02x}")
             }
@@ -239,6 +251,9 @@ impl Display for DebugInfoReadError {
                     "tried to decode a non-utf8 label: {}",
                     label.escape_ascii()
                 )
+            }
+            DebugInfoReadError::InvalidLabel(s) => {
+                write!(f, "invalid label: {:?}", s.as_ref())
             }
         }
     }
