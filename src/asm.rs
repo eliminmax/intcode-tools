@@ -114,10 +114,10 @@
 //! [proposed assembly syntax]: <https://esolangs.org/wiki/Intcode#Proposed_Assembly_Syntax>
 //! [Rust]: <https://doc.rust-lang.org/reference/identifiers.html>
 
+use crate::debug_info::{DebugInfo, DirectiveDebug, DirectiveKind};
 use ast_prelude::*;
 use chumsky::error::Rich;
 use std::collections::HashMap;
-use crate::debug_info::{DirectiveKind, DirectiveDebug, DebugInfo};
 
 /// a small module that re-exports the types needed to work with the AST of the assembly language.
 pub mod ast_prelude {
