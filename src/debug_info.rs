@@ -5,6 +5,7 @@
 //! Module for [DebugInfo] and its related functionality
 
 use chumsky::span::{SimpleSpan, Spanned};
+use std::io::{self, Write};
 
 mod parse;
 
@@ -49,5 +50,16 @@ impl TryFrom<u8> for DirectiveKind {
             2 => Ok(Self::Ascii),
             _ => Err(value),
         }
+    }
+}
+
+impl crate::Interpreter {
+    /// Diagnose the error state with `debug_info`
+    pub fn diagnose<W: Write>(&self, debug_info: &DebugInfo, writer: &mut W) -> io::Result<()> {
+        todo!(
+            "Interpreter::diagnose({}, writer: {})",
+            std::any::type_name_of_val(&debug_info),
+            std::any::type_name_of_val(&writer)
+        )
     }
 }
