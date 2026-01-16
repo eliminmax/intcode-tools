@@ -7,7 +7,7 @@
 use chumsky::span::{SimpleSpan, Spanned};
 use std::io::{self, Write};
 
-mod parse;
+pub mod parse;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 /// Debug info about a given directive
@@ -21,7 +21,7 @@ pub struct DirectiveDebug {
 }
 
 #[non_exhaustive]
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 /// Debug info generated when assembling source code with [`assemble_with_debug`]
 ///
 /// [`assemble_with_debug`]: crate::asm::assemble_with_debug
