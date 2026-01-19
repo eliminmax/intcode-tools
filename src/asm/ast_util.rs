@@ -9,7 +9,7 @@ pub use crate::expr;
 pub use crate::param;
 /// A macro to make constructing [expressions](Expr) simpler.
 ///
-/// If passed a literal, it will resolve to an [Expr::Number] with that literal value
+/// If passed a literal, it will resolve to an [`Expr::Number`] with that literal value
 ///
 /// ```
 /// use ial::asm::{ast_prelude::*, ast_util::*};

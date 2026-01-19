@@ -127,14 +127,16 @@ mod address {
     /// A non-negative i64, usable as an index into Intcode memory
     pub struct IntcodeAddress(i64);
     impl IntcodeAddress {
-        /// Create a new [IntcodeAddress]. If `n` is negative, returns [None]
+        /// Create a new [`IntcodeAddress`]. If `n` is negative, returns [None]
         #[inline]
+        #[must_use]
         pub const fn new(n: i64) -> Option<Self> {
             if n < 0 { None } else { Some(Self(n)) }
         }
 
         /// get the inner [i64]
         #[inline]
+        #[must_use]
         pub const fn get(&self) -> i64 {
             self.0
         }
@@ -279,15 +281,15 @@ pub struct UnknownMode {
 
 impl From<UnknownMode> for InterpreterError {
     fn from(UnknownMode { mode_digit: i }: UnknownMode) -> Self {
-        Self::UnknownMode(i as i64)
+        Self::UnknownMode(i64::from(i))
     }
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
-/// An Intcode OpCode
+/// An Intcode `OpCode`
 ///
 /// For explanations of the specific opcodes and their meaning, either go through Advent of Code
-/// 2019, or see [asm::Instr].
+/// 2019, or see [`asm::Instr`].
 #[allow(missing_docs, reason = "trivial")]
 pub enum OpCode {
     Add = 1,
@@ -372,7 +374,7 @@ impl Interpreter {
     }
 
     /// Get the memory at `address`.
-    /// If `address` is negative, it will return an [Err] containing a [NegativeMemAccess].
+    /// If `address` is negative, it will return an [Err] containing a [`NegativeMemAccess`].
     #[doc(alias = "peek")]
     #[inline]
     pub fn mem_get(&self, address: i64) -> Result<i64, NegativeMemAccess> {
@@ -385,8 +387,8 @@ impl Interpreter {
 
     /// Run a single instruction
     ///
-    /// On an error, returns an [Err] containing the appropriate [InterpreterError]
-    /// Otherwise, returns an [Ok] containing the [StepOutcome]
+    /// On an error, returns an [Err] containing the appropriate [`InterpreterError`]
+    /// Otherwise, returns an [Ok] containing the [`StepOutcome`]
     ///
     /// # Example
     ///
@@ -462,8 +464,8 @@ impl Interpreter {
             }
             OpCode::Jnz => self.jump(modes, |i| i != 0),
             OpCode::Jz => self.jump(modes, |i| i == 0),
-            OpCode::Lt => self.op3(modes, |a, b| if a < b { 1 } else { 0 }),
-            OpCode::Eq => self.op3(modes, |a, b| if a == b { 1 } else { 0 }),
+            OpCode::Lt => self.op3(modes, |a, b| i64::from(a < b)),
+            OpCode::Eq => self.op3(modes, |a, b| i64::from(a == b)),
             OpCode::Rbo => {
                 let offset = self.resolve_param(modes[0], 1)?;
                 self.trace([(self.code[self.index + 1], offset)]);

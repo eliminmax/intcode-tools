@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: 0BSD
 
-use super::*;
+use super::{Interpreter, OpCode, ParamMode, InterpreterError, NegativeMemAccess, Index, StepOutcome};
 
 impl Interpreter {
     // Given a 5 digit number, digits ABCDE are used as follows:
@@ -24,7 +24,7 @@ impl Interpreter {
         ))
     }
 
-    /// Wraps [Interpreter::mem_get], marking the interpreter as poisoned on error
+    /// Wraps [`Interpreter::mem_get`], marking the interpreter as poisoned on error
     pub(crate) fn checked_access(&mut self, address: i64) -> Result<i64, NegativeMemAccess> {
         let result = self.mem_get(address);
         if result.is_err() {
@@ -55,7 +55,7 @@ impl Interpreter {
 
     /// Processes turns `address` into a concrete index according to `mode`.
     /// If that would involve accessing memory at a negative index, or if `mode` is
-    /// [ParamMode::Immediate], it instead marks `self` as poisoned and returns the error
+    /// [`ParamMode::Immediate`], it instead marks `self` as poisoned and returns the error
     pub(crate) fn resolve_dest(
         &mut self,
         mode: ParamMode,

@@ -22,7 +22,7 @@
 //! label: directive ; comment
 //! ```
 //!
-//! Labels are parsed using [chumsky::text::ident], so identifiers the same rules as [Rust], except
+//! Labels are parsed using [`chumsky::text::ident`], so identifiers the same rules as [Rust], except
 //! without Unicode normalization.
 //!
 //! # Example
@@ -88,7 +88,7 @@
 //! assert_eq!(assemble_ast(ast).unwrap(), vec![1106, 0, 0]);
 //! ```
 //!
-//! The [ast_util] module provides some small functions and macros to express things more
+//! The [`ast_util`] module provides some small functions and macros to express things more
 //! concicely:
 //!
 //! ```
@@ -292,6 +292,7 @@ pub struct Parameter<'a>(pub ParamMode, pub Box<Spanned<Expr<'a>>>);
 
 impl Parameter<'_> {
     /// Return the [span](SimpleSpan)` of the parameter
+    #[must_use]
     pub const fn span(&self) -> SimpleSpan {
         match self.0 {
             ParamMode::Positional => self.1.span,
@@ -395,6 +396,7 @@ pub enum Instr<'a> {
 
 impl Instr<'_> {
     /// Return the number of integers the instruction will resolve to
+    #[must_use]
     pub const fn size(&self) -> i64 {
         match self {
             Instr::Halt => 1,
@@ -623,14 +625,14 @@ impl<'a> Line<'a> {
 /// hello: ASCII "Hello, world!"
 /// "#).is_ok());
 /// ```
-pub fn build_ast<'a>(code: &'a str) -> Result<Vec<Line<'a>>, Vec<Rich<'a, char>>> {
+pub fn build_ast(code: &str) -> Result<Vec<Line<'_>>, Vec<Rich<'_, char>>> {
     use chumsky::Parser;
     parsers::grammar().parse(code).into_result()
 }
 
 type RawDebugInfo<'a> = (Vec<(Spanned<&'a str>, i64)>, Vec<DirectiveDebug>);
 
-/// Common implementation of [assemble_ast] and [assemble_with_debug].
+/// Common implementation of [`assemble_ast`] and [`assemble_with_debug`].
 /// If `DEBUG` is false, then both vecs in the returned [`RawDebugInfo`] will be empty
 fn assemble_inner<'a, const DEBUG: bool>(
     code: Vec<Line<'a>>,
@@ -638,8 +640,8 @@ fn assemble_inner<'a, const DEBUG: bool>(
     let mut labels: HashMap<&'a str, (i64, SimpleSpan)> = HashMap::new();
     let mut index = 0;
     let mut directives = Vec::new();
-    for line in code.iter() {
-        for Spanned { inner: label, span } in line.labels.iter() {
+    for line in &code {
+        for Spanned { inner: label, span } in &line.labels {
             if let Some((_, old_span)) = labels.insert(*label, (index, *span)) {
                 return Err(AssemblyError::DuplicateLabel {
                     label,
@@ -702,9 +704,9 @@ fn assemble_inner<'a, const DEBUG: bool>(
 ///
 /// On success, returns `Ok((code, debug))`, where `code` is a [`Vec<i64>`] and `debug` is a
 /// [`DebugInfo`].
-pub fn assemble_with_debug<'a>(
-    code: Vec<Line<'a>>,
-) -> Result<(Vec<i64>, DebugInfo), AssemblyError<'a>> {
+pub fn assemble_with_debug(
+    code: Vec<Line<'_>>,
+) -> Result<(Vec<i64>, DebugInfo), AssemblyError<'_>> {
     assemble_inner::<true>(code).map(|(output, (labels, directives))| {
         let labels = labels
             .into_iter()
@@ -743,7 +745,7 @@ pub fn assemble_with_debug<'a>(
 ///
 /// assert_eq!(assemble_ast(ast).unwrap(), vec![99]);
 /// ```
-pub fn assemble_ast<'a>(code: Vec<Line<'a>>) -> Result<Vec<i64>, AssemblyError<'a>> {
+pub fn assemble_ast(code: Vec<Line<'_>>) -> Result<Vec<i64>, AssemblyError<'_>> {
     assemble_inner::<false>(code).map(|(output, _)| output)
 }
 
@@ -761,7 +763,7 @@ pub enum GeneralAsmError<'a> {
 ///
 /// This is a thin convenience wrapper around [`build_ast`] and [`assemble_ast`].
 #[inline]
-pub fn assemble<'a>(code: &'a str) -> Result<Vec<i64>, GeneralAsmError<'a>> {
+pub fn assemble(code: &str) -> Result<Vec<i64>, GeneralAsmError<'_>> {
     assemble_ast(build_ast(code).map_err(GeneralAsmError::BuildAst)?)
         .map_err(GeneralAsmError::Assemble)
 }

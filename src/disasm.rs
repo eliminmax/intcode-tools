@@ -7,7 +7,7 @@
 //! See [disassemble] for documentation
 
 use super::asm::ast_prelude::*;
-use super::asm::ast_util::*;
+use super::asm::ast_util::{boxed, span};
 use super::{Interpreter, OpCode};
 
 /// Create disassembly from the memory
@@ -218,7 +218,7 @@ pub enum DebugInfoMismatch {
     MissingInts(usize),
     /// The listed label resolved to the middle of a directive
     MisalignedLabel(Box<str>, i64),
-    /// An [instruction directive] had either 0 or more than 4 ints in its [output_span]
+    /// An [instruction directive] had either 0 or more than 4 ints in its [`output_span`]
     ///
     /// [instruction directive]: crate::debug_info::DirectiveKind::Instruction
     /// [output_span]: crate::debug_info::DirectiveDebug::output_span
@@ -244,7 +244,7 @@ impl Display for DebugInfoMismatch {
 impl std::error::Error for DebugInfoMismatch {}
 
 impl DebugInfo {
-    /// Dissasmble `code`, using [DebugInfo] to avoid some of the limitations of [disassemble]
+    /// Dissasmble `code`, using [`DebugInfo`] to avoid some of the limitations of [disassemble]
     pub fn disassemble(
         &self,
         code: impl IntoIterator<Item = i64>,
@@ -373,7 +373,7 @@ impl DebugInfo {
                         OpCode::Eq => write_instr!(Eq, 3),
                         OpCode::Rbo => write_instr!(Rbo, 1),
                         OpCode::Halt => write_instr!(Halt, 0),
-                    };
+                    }
                 }
                 DirectiveKind::Data => {
                     writeln_string!(&mut disasm, "DATA {}", ints.into_iter().format(", "));

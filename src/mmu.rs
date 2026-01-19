@@ -16,11 +16,7 @@ impl IntcodeMem {
         self.segments
             .iter()
             .filter_map(|(&k, v)| {
-                if v.as_ref() == &[0; 512] {
-                    Some(k)
-                } else {
-                    None
-                }
+                (v.as_ref() == &[0; 512]).then_some(k)
             })
             .collect()
     }
@@ -50,7 +46,7 @@ impl std::iter::FromIterator<i64> for IntcodeMem {
 
         let mut current_segment = 0;
 
-        for chunk in iter.chunks(512).into_iter() {
+        for chunk in &iter.chunks(512) {
             segments.insert(
                 current_segment,
                 Box::new(
@@ -73,8 +69,7 @@ impl std::ops::Index<i64> for IntcodeMem {
     fn index(&self, i: i64) -> &i64 {
         self.segments
             .get(&(i & !0x1ff))
-            .map(|s| s.index((i & 0x1ff) as usize))
-            .unwrap_or(&0)
+            .map_or(&0, |s| s.index((i & 0x1ff) as usize))
     }
 }
 
@@ -93,13 +88,7 @@ impl Clone for IntcodeMem {
         let segments = self
             .segments
             .iter()
-            .filter_map(|(&index, mem)| {
-                if mem.as_ref() != &[0_i64; 512] {
-                    Some((index, mem.clone()))
-                } else {
-                    None
-                }
-            })
+            .filter(|&(&_index, mem)| mem.as_ref() != &[0_i64; 512]).map(|(&index, mem)| (index, mem.clone()))
             .collect();
         Self { segments }
     }
@@ -114,7 +103,7 @@ pub(super) struct IntcodeMemIter {
 impl Iterator for IntcodeMemIter {
     type Item = i64;
     fn next(&mut self) -> Option<i64> {
-        if self.current_segment > self.segments.keys().max().cloned().unwrap_or_default() {
+        if self.current_segment > self.segments.keys().max().copied().unwrap_or_default() {
             return None;
         }
         let ret: i64;

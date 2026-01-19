@@ -58,26 +58,31 @@ pub struct TracedInstr {
 
 impl TracedInstr {
     /// Return the relative base at the time the traced instruction was excuted,
+    #[must_use]
     pub fn rel_base(&self) -> i64 {
         self.rel_base
     }
 
     /// Return the instruction pointer's position when the traced instruction was executed
+    #[must_use]
     pub fn instr_ptr(&self) -> i64 {
         self.instr_ptr
     }
 
     /// Return the actual integer of the traced instruction
+    #[must_use]
     pub fn op_int(&self) -> i64 {
         self.op_int
     }
 
     /// Return the opcode of the traced instruction
+    #[must_use]
     pub fn op_code(&self) -> OpCode {
         self.opcode
     }
 
     /// If the instruction stored a value, return that value
+    #[must_use]
     pub fn stored_val(&self) -> Option<i64> {
         match self.op {
             TracedOp::Add(_, _, (_, stored))
@@ -90,6 +95,7 @@ impl TracedInstr {
     }
 
     /// Return an array of the parameter modes of the traced instruction
+    #[must_use]
     pub fn param_modes(&self) -> [ParamMode; 3] {
         self.packed_modes.unpack()
     }
@@ -136,10 +142,10 @@ impl TracedInstr {
             OpCode::Halt => op! { Halt },
         };
         Self {
+            op,
             op_int,
             instr_ptr,
             rel_base,
-            op,
             packed_modes,
             opcode,
         }
@@ -170,12 +176,13 @@ impl Interpreter {
 
     /// Stop tracing executed instructions into a [Trace]. If no trace was active, returns [`None`]
     ///
-    /// see [Interpreter::start_trace]
+    /// see [`Interpreter::start_trace`]
     pub fn end_trace(&mut self) -> Option<Trace> {
         self.trace.take()
     }
 
     /// Get a view of the current trace
+    #[must_use]
     pub fn show_trace(&self) -> Option<&Trace> {
         self.trace.as_ref()
     }
@@ -195,9 +202,9 @@ impl Interpreter {
 
 #[derive(Debug, Default, Clone)]
 /// A log of instructions that an [Interpreter] has executed since a call to
-/// [Interpreter::start_trace]
+/// [`Interpreter::start_trace`]
 ///
-/// see [Interpreter::start_trace]
+/// see [`Interpreter::start_trace`]
 pub struct Trace(pub Vec<TracedInstr>);
 
 impl Trace {
@@ -213,7 +220,7 @@ impl Trace {
             instr_ptr,
             rel_base,
             resolved_params,
-        ))
+        ));
     }
 
     pub(crate) fn new() -> Self {

@@ -2,10 +2,10 @@
 //
 // SPDX-License-Identifier: 0BSD
 
-//! functionality relating to reading and writing [DebugInfo]
+//! functionality relating to reading and writing [`DebugInfo`]
 //!
 //! First, the file begins with a 7-byte [magic sequence][MAGIC] used to identify it as a file
-//! containing encoded IAL [DebugInfo], then the [version number][VERSION], then the [data payload].
+//! containing encoded IAL [`DebugInfo`], then the [version number][VERSION], then the [data payload].
 //!
 //! # Data Payload
 //!
@@ -14,8 +14,8 @@
 //!
 //! ## Labels section
 //!
-//! This section contains the serialized [DebugInfo::labels]. It consists of the number of labels
-//! within the section, serialized as an [EncodedSize], followed by the labels themselves.
+//! This section contains the serialized [`DebugInfo::labels`]. It consists of the number of labels
+//! within the section, serialized as an [`EncodedSize`], followed by the labels themselves.
 //!
 //! The serialized labels are structured as follows:
 //!
@@ -69,7 +69,7 @@
 //! [`as`]: <https://doc.rust-lang.org/stable/reference/expressions/operator-expr.html#r-expr.as.enum>
 //! [Reading a Label]: <#reading-a-label>
 
-use super::*;
+use super::{DebugInfo, DirectiveKind, SimpleSpan, DirectiveDebug};
 use crate::asm::ast_util::span;
 use chumsky::text::Char;
 use std::io::{self, Read, Write};
@@ -86,6 +86,7 @@ const FLATE_LOWER_THRESHOLD: usize = 4096;
 const FLATE_UPPER_THRESHOLD: usize = FLATE_LOWER_THRESHOLD * 4;
 
 /// Check if `text` is a valid identifier
+#[must_use]
 pub fn valid_ident(text: &str) -> bool {
     let mut chars = text.chars();
     chars.next().is_some_and(|c| c.is_ident_start()) && chars.all(|c| c.is_ident_continue())
@@ -113,7 +114,7 @@ pub fn valid_ident(text: &str) -> bool {
 /// *In fact, the implementation of [`TryFrom<&EncodedSize>`] for [usize] uses that approach, with
 /// the addition of overflow checking.*
 ///
-/// An [EncodedSize] can be [dereferenced][core::ops::Deref] into a [`[u8]`][slice].
+/// An [`EncodedSize`] can be [dereferenced][core::ops::Deref] into a [`[u8]`][slice].
 #[derive(PartialEq)]
 pub struct EncodedSize([u8]);
 
@@ -178,19 +179,19 @@ type _BitCounter = usize;
 
 /// Unsigned integer type for dealing with bit widths
 ///
-/// [core::num] uses [u32] for bit counts, but the bit count of an [EncodedSize] is dependent on
+/// [`core::num`] uses [u32] for bit counts, but the bit count of an [`EncodedSize`] is dependent on
 /// its [`len`][slice::len], which is a [usize].
 ///
 /// This type alias is used to make sure that the larger of the two types is always used, by
 /// resolving to [u32] for 16-bit and 32-bit targets, but [usize] for all other targets.
 pub type BitCounter = _BitCounter;
 
-/// The minimum bit length needed for [usize] to be able to store an [EncodedSize] that was too
+/// The minimum bit length needed for [usize] to be able to store an [`EncodedSize`] that was too
 /// large to fit.
 #[derive(Debug, PartialEq)]
 pub struct NeededBits(BitCounter);
 
-/// sanity check to make sure that the right type was selected for [BitCounter]
+/// sanity check to make sure that the right type was selected for [`BitCounter`]
 const _: () = assert!(
     BitCounter::BITS
         == if u32::BITS >= usize::BITS {
@@ -212,7 +213,7 @@ const HEADER: [u8; 8] = const {
 };
 
 impl DebugInfo {
-    /// Write the debug info into the format described in [crate::debug_info::parse]
+    /// Write the debug info into the format described in [`crate::debug_info::parse`]
     pub fn write(self, mut f: impl Write) -> io::Result<()> {
         use flate2::write::ZlibEncoder;
         let DebugInfo { labels, directives } = self;
@@ -263,7 +264,7 @@ impl DebugInfo {
         ZlibEncoder::new(f, compression_level).write_all(&buffer[2..])
     }
 
-    /// Read the debug info from the format described in [crate::debug_info::parse]
+    /// Read the debug info from the format described in [`crate::debug_info::parse`]
     pub fn read(mut f: impl Read) -> Result<Self, DebugInfoReadError> {
         use DebugInfoReadError as Error;
         use flate2::read::ZlibDecoder;
@@ -356,18 +357,18 @@ impl DebugInfo {
 
 #[non_exhaustive]
 #[derive(Debug)]
-/// An error that occored while trying to read [DebugInfo] from its opaque on-disk format
+/// An error that occored while trying to read [`DebugInfo`] from its opaque on-disk format
 pub enum DebugInfoReadError {
     /// The first 8 bytes of the on-disk data didn't match the proper magic byte sequence
     BadMagic([u8; 8]),
     /// The version of the on-disk data format was not recognized
     VersionMismatch(u8),
-    /// While reading, the contained [io::Error] occored
+    /// While reading, the contained [`io::Error`] occored
     IoError(io::Error),
     /// [usize] too small to encode a given error type, and would need to be at least this many
     /// bits
     IntSize(NeededBits),
-    /// The provided byte didn't match any [DirectiveKind]
+    /// The provided byte didn't match any [`DirectiveKind`]
     BadDirectiveByte(u8),
     /// A [label][DebugInfo::labels]'s [span][SimpleSpan] is backwards
     /// A label's text data wasn't UTF-8-encoded
