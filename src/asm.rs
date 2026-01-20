@@ -117,6 +117,7 @@
 use crate::debug_info::{DebugInfo, DirectiveDebug, DirectiveKind};
 use ast_prelude::*;
 use chumsky::error::Rich;
+use itertools::Itertools;
 use std::collections::HashMap;
 
 mod display_impls;
@@ -751,6 +752,7 @@ pub fn assemble_with_debug(
                     index,
                 )
             })
+            .sorted_by_key(|(Spanned { span, .. }, index)| (*index, *span))
             .collect::<Vec<_>>()
             .into_boxed_slice();
 
