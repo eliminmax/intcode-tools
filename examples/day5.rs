@@ -11,7 +11,7 @@ fn part1(mut i: Interpreter) -> i64 {
         panic!();
     };
     let diagnostic = outputs.pop().unwrap();
-    assert!(outputs.into_iter().all(|i| i == 0));
+    assert!(outputs.into_iter().all(|i| i == 0), "diagnostic failed");
 
     diagnostic
 }
@@ -20,7 +20,7 @@ fn part2(mut i: Interpreter) -> i64 {
         panic!();
     };
     let diagnostic = outputs.pop().unwrap();
-    assert!(outputs.into_iter().all(|i| i == 0));
+    assert!(outputs.into_iter().all(|i| i == 0), "diagnostic failed");
 
     diagnostic
 }
@@ -33,7 +33,7 @@ fn main() {
 
     let code = input
         .trim()
-        .split(",")
+        .split(',')
         .map(str::parse)
         .collect::<Result<Vec<i64>, _>>()
         .unwrap();

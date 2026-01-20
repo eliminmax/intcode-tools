@@ -8,14 +8,14 @@ use ial::prelude::*;
 
 fn part1(mut i: Interpreter) -> i64 {
     let (output, state) = i.run_through_inputs([1]).unwrap();
-    assert_eq!(state, State::Halted);
+    assert_eq!(state, State::Halted, "intcode did not halt");
     assert_eq!(output.len(), 1, "{output:?}");
     output[0]
 }
 
 fn part2(mut i: Interpreter) -> i64 {
     let (output, state) = i.run_through_inputs([2]).unwrap();
-    assert_eq!(state, State::Halted);
+    assert_eq!(state, State::Halted, "intcode did not halt");
     assert_eq!(output.len(), 1, "{output:?}");
     output[0]
 }
@@ -28,7 +28,7 @@ fn main() {
 
     let code = input
         .trim()
-        .split(",")
+        .split(',')
         .map(str::parse)
         .collect::<Result<Vec<i64>, _>>()
         .unwrap();

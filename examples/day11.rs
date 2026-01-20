@@ -82,7 +82,7 @@ fn part1(mut interpreter: Interpreter) -> usize {
         .run_through_inputs(vec![panels.entry(location).or_default().report()])
         .unwrap()
     {
-        debug_assert_eq!(outputs.len(), 2);
+        debug_assert_eq!(outputs.len(), 2, "output wasn't a pair");
         panels.entry(location).or_default().paint(outputs[0]);
         match outputs[1] {
             0 => direction.rotate_right(),
@@ -107,7 +107,7 @@ fn part2(mut interpreter: Interpreter) {
         .run_through_inputs(vec![panels.entry(location).or_default().report()])
         .unwrap()
     {
-        debug_assert_eq!(outputs.len(), 2);
+        debug_assert_eq!(outputs.len(), 2, "output wasn't a pair");
         panels.entry(location).or_default().paint(outputs[0]);
         match outputs[1] {
             0 => direction.rotate_right(),
@@ -147,7 +147,7 @@ fn main() {
         read_to_string(args().nth(1).as_deref().expect("must provide file"))
             .expect("Failed to read file!")
             .trim()
-            .split(",")
+            .split(',')
             .map(|s| s.parse().expect("Could not parse i64")),
     );
 
