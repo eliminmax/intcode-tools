@@ -5,7 +5,10 @@
 //! Module for [`DebugInfo`] and its related functionality
 
 use chumsky::span::{SimpleSpan, Spanned};
+use itertools::Itertools;
 use std::io::{self, Write};
+
+use crate::Interpreter;
 
 pub mod parse;
 
@@ -57,19 +60,79 @@ impl TryFrom<u8> for DirectiveKind {
     }
 }
 
-impl crate::Interpreter {
-    /// Write diagnostic information about the interpreter's state to `writer`
+impl Interpreter {
+    /// Write human-readable diagnostic information about the interpreter's state to `writer`
     ///
-    /// Uses [`debug_info.labels`][DebugInfo::labels] to determine points of interest
+    /// Uses [`debug_info.labels`][DebugInfo::labels] to determine points of interest, and to
+    /// disassemble the intcode memory.
     ///
     /// # Errors
     ///
-    /// If writing to `writer` fails, returns the resulting [`io::Error`]
-    pub fn diagnose<W: Write>(&self, debug_info: &DebugInfo, writer: &mut W) -> io::Result<()> {
-        todo!(
-            "Interpreter::diagnose({}, writer: {})",
-            std::any::type_name_of_val(&debug_info),
-            std::any::type_name_of_val(&writer)
-        )
+    /// If writing to `writer` fails, returns the resulting [`io::Error`].
+    ///
+    /// If `debug_info` fails to apply to this [`Interpreter`], then it does not return an error,
+    /// but it does write the error message instead of writing the dissassembly to the output.
+    pub fn write_diagnostic<W: Write>(
+        &self,
+        debug_info: &DebugInfo,
+        writer: &mut W,
+    ) -> io::Result<()> {
+        use std::collections::BTreeMap;
+        let label_map = debug_info
+            .labels
+            .iter()
+            .map(|(s, a)| (a, s.inner.as_ref()))
+            .into_group_map();
+        let directive_starts = debug_info
+            .directives
+            .iter()
+            .enumerate()
+            .filter_map(|(i, dir)| {
+                i64::try_from(dir.output_span.start)
+                    .ok()
+                    .map(|start| (start, i + 1))
+            })
+            .collect::<BTreeMap<i64, usize>>();
+
+        writeln!(writer, "INTERPRETER STATE")?;
+        if let Some(labels) = label_map.get(&self.index) {
+            writeln!(
+                writer,
+                "    instruction pointer: {} ({})",
+                self.index,
+                labels.join(", ")
+            )?;
+        } else {
+            writeln!(
+                writer,
+                "    instruction pointer: {}",
+                self.index
+            )?;
+        }
+        if let Some(i) = directive_starts.get(&self.index) {
+            writeln!(writer, "        directive #{i}")
+        } else {
+            writeln!(writer, "        not a directive boundary")
+        }?;
+
+        if let Some(labels) = label_map.get(&self.rel_offset) {
+            writeln!(
+                writer,
+                "    relative base: {} ({})",
+                self.rel_offset,
+                labels.join(", ")
+            )?;
+        } else {
+            writeln!(writer, "    relative base {}", self.rel_offset)?;
+        }
+
+        match debug_info.disassemble(self.code.clone()) {
+            Ok(dis) => writeln!(writer, "\n\nDISASSEMBLY\n{dis}")?,
+            Err(e) => writeln!(
+                writer,
+                "unable to disassemble with provided debug_info: {e}"
+            )?,
+        }
+        Ok(())
     }
 }

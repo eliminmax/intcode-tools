@@ -128,7 +128,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let prog = Interpreter::new(prog);
     if let Err((err, interp)) = interactive_run(prog) {
         if let Some(debug_info) = debug_info.as_ref() {
-            interp.diagnose(debug_info, &mut stderr())?;
+            eprintln!("INTERPRETER ERROR\n\n");
+            interp.write_diagnostic(debug_info, &mut stderr())?;
         }
         Err(err.into())
     } else {
