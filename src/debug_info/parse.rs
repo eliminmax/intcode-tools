@@ -133,6 +133,7 @@ impl EncodedSize {
         // `impl From<Box<[u8]>> for Box<ByteStr>` as of Rust 1.92.0.
         unsafe { Box::from_raw(Box::into_raw(slice) as _) }
     }
+
     fn read(r: &mut impl Read) -> io::Result<Box<Self>> {
         let mut v = Vec::with_capacity(usize::BITS as usize * 7 / 8);
 
@@ -227,6 +228,8 @@ impl DebugInfo {
         use flate2::write::ZlibEncoder;
         let DebugInfo { labels, directives } = self;
 
+        f.write_all(&HEADER)?;
+
         let mut buffer = Vec::new();
 
         macro_rules! write_usize {
@@ -241,10 +244,6 @@ impl DebugInfo {
                 write_usize!($span.end - $span.start);
             };
         }
-        buffer.extend(MAGIC);
-        buffer.push(VERSION);
-        f.write_all(&buffer)?;
-        buffer.clear();
 
         write_usize!(labels.len());
 
