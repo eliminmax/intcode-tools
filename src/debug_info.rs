@@ -103,11 +103,7 @@ impl Interpreter {
                 labels.join(", ")
             )?;
         } else {
-            writeln!(
-                writer,
-                "    instruction pointer: {}",
-                self.index
-            )?;
+            writeln!(writer, "    instruction pointer: {}", self.index)?;
         }
         if let Some(i) = directive_starts.get(&self.index) {
             writeln!(writer, "        directive #{i}")
