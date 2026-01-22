@@ -19,7 +19,7 @@ impl IntcodeMem {
             .collect()
     }
 
-    /// remove all segments that are filled with zeroes, and
+    /// remove all segments that are filled with zeroes, and shrink `self.segments`'s allocation
     pub(super) fn prune(&mut self) {
         self.segments.retain(|_, s| s[..] != [0; 512]);
         self.segments.shrink_to_fit();
