@@ -33,10 +33,11 @@ mod internals;
 /// into segments, which are each contiguous in memory.
 mod mmu;
 
+use std::convert::AsRef;
 use std::error::Error;
 use std::fmt::{self, Debug, Display};
 use std::iter::empty;
-use std::ops::{Index, IndexMut};
+use std::ops::{Index, IndexMut, Range};
 
 pub mod trace;
 
@@ -598,6 +599,64 @@ impl Interpreter {
             self.exec_instruction(&mut empty(), &mut Vec::with_capacity(0))?;
         }
         Ok(())
+    }
+
+    /// Get a range of memory addresses
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use ial::prelude::*;
+    /// use ial::asm::assemble;
+    /// // short intcode program that sets an unset int to the HALT instruction, then executes it
+    /// let intcode = assemble("ADD #90, #9, halt\nhalt:").unwrap();
+    /// let mut interp = Interpreter::new(intcode);
+    /// interp.run_through_inputs(empty()).unwrap();
+    /// let expected: &[i64] = &[1101, 90, 9, 4, 99];
+    /// assert_eq!(interp.get_range(0..5).unwrap(), expected);
+    /// ```
+    ///
+    /// Works even if the range is split across multiple allocations (see Note below):
+    ///
+    /// ```
+    /// use ial::prelude::*;
+    /// use ial::OpCode;
+    /// // generate code large enough that it will be split
+    /// let code = (0..8192).fold(
+    ///     Vec::with_capacity(16384),
+    ///     |mut v, i| { v.extend([OpCode::Out as i64 + 100, i]); v }
+    /// );
+    /// let interp = Interpreter::new(code.clone());
+    /// assert_eq!(interp.get_range(0..16384).unwrap(), &code);
+    /// ```
+    ///
+    /// Works if the span is outside the bounds of the actually-stored memory
+    /// ```
+    /// use ial::prelude::*;
+    /// use ial::OpCode;
+    /// let interp = Interpreter::new([OpCode::Halt as i64]);
+    /// assert_eq!(interp.get_range(100..1000).unwrap(), [0_i64; 900].as_slice());
+    /// ```
+    ///
+    /// # Note
+    ///
+    /// Given the current strategy for handling high intcode indexes, the range may be split across
+    /// multiple heap allocations, so this function currently returns a
+    /// [`Cow<'_, [i64]>`][std::borrow::Cow], though this may change in the future.
+    ///
+    /// # Errors
+    ///
+    /// If the range starts with a negative index, returns [`NegativeMemAccess`] containing that
+    /// index.
+    pub fn get_range(
+        &self,
+        range: Range<i64>,
+    ) -> Result<impl AsRef<[i64]> + Debug + PartialEq<&[i64]> + Clone, NegativeMemAccess> {
+        if range.start >= 0 {
+            Ok(self.code.get_range(range))
+        } else {
+            Err(NegativeMemAccess(range.start))
+        }
     }
 }
 

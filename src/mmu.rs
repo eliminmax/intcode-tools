@@ -3,8 +3,10 @@
 // SPDX-License-Identifier: 0BSD
 
 use itertools::Itertools;
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
+use std::ops::Range;
 
 macro_rules! page_index {
     ($i: expr) => {{
@@ -33,6 +35,36 @@ impl IntcodeMem {
     pub(super) fn prune(&mut self) {
         self.segments.retain(|_, s| s[..] != EMPTY);
         self.segments.shrink_to_fit();
+    }
+
+    fn get_segment(&self, segment_num: i64) -> &[i64; 512] {
+        self.segments
+            .get(&segment_num)
+            .map_or(&EMPTY, |s| s.as_ref())
+    }
+
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "mask ensures it's always in range"
+    )]
+    pub(super) fn get_range(&self, range: Range<i64>) -> Cow<'_, [i64]> {
+        let first = range.start;
+        let last = range.end - 1;
+        let first_segment = first & !0x1ff;
+        let last_segment = last & !0x1ff;
+        if first & !0x1ff == last & !0x1ff {
+            Cow::Borrowed(&self.get_segment(first_segment)[page_index!(first)..=page_index!(last)])
+        } else {
+            let mut v = Vec::with_capacity(range.clone().count());
+            v.extend_from_slice(&self.get_segment(first_segment)[page_index!(first)..]);
+            for segment in ((first_segment + 512)..last_segment).step_by(512) {
+                v.extend_from_slice(self.get_segment(segment));
+            }
+            v.extend_from_slice(&self.get_segment(last_segment)[..=page_index!(last)]);
+
+            Cow::Owned(v)
+        }
     }
 }
 
