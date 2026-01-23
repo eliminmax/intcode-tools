@@ -49,6 +49,18 @@ struct Args {
     format: CodeFormat,
 }
 
+macro_rules! to_ascii_char {
+    ($e: expr) => {{
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "in macro to make it explicit"
+        )]
+        {
+            $e as u8 as char
+        }
+    }};
+}
 fn get_line() -> Result<impl Iterator<Item = i64>, AsciiError> {
     let mut buf = String::new();
     stdin().read_line(&mut buf).map_err(AsciiError::IoError)?;
@@ -67,7 +79,7 @@ fn print_ascii(intcode_output: Vec<i64>) -> Result<(), AsciiError> {
     let mut s = String::with_capacity(intcode_output.len());
     for i in intcode_output {
         match i {
-            0..127 => s.push(i as u8 as char),
+            c @ 0..127 => s.push(to_ascii_char!(c)),
             _ => return Err(AsciiError::InvalidAsciiInt(i)),
         }
     }

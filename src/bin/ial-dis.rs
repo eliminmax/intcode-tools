@@ -86,7 +86,7 @@ impl InputFormat {
                     return Ok(Vec::new());
                 }
                 input
-                    .split(",")
+                    .split(',')
                     .map(str::trim)
                     .map(str::parse::<i64>)
                     .collect::<Result<_, _>>()

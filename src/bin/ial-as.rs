@@ -36,13 +36,13 @@ impl OutputFormat {
             }
             OutputFormat::LittleEndian => {
                 for i in intcode {
-                    writer.write_all(&i.to_le_bytes())?
+                    writer.write_all(&i.to_le_bytes())?;
                 }
                 Ok(())
             }
             OutputFormat::BigEndian => {
                 for i in intcode {
-                    writer.write_all(&i.to_be_bytes())?
+                    writer.write_all(&i.to_be_bytes())?;
                 }
                 Ok(())
             }
@@ -76,7 +76,7 @@ struct Args {
     format: OutputFormat,
 }
 
-fn report_ast_build_err(err: Rich<'_, char>, file: &str, source: &str) {
+fn report_ast_build_err(err: &Rich<'_, char>, file: &str, source: &str) {
     use std::fmt::Write;
 
     let mut builder = Report::build(ReportKind::Error, (file, err.span().into_range()))
@@ -127,7 +127,7 @@ fn report_ast_build_err(err: Rich<'_, char>, file: &str, source: &str) {
         .expect("failed to print to stderr");
 }
 
-fn report_ast_assembly_err(err: AssemblyError<'_>, file: &str, source: &str) {
+fn report_ast_assembly_err(err: &AssemblyError<'_>, file: &str, source: &str) {
     match err {
         AssemblyError::UnresolvedLabel { label, span } => {
             Report::build(ReportKind::Error, (file, span.into_range()))
@@ -207,7 +207,7 @@ fn main() -> ExitCode {
         Ok(ast) => ast,
         Err(errs) => {
             for err in errs {
-                report_ast_build_err(err, &file, &input);
+                report_ast_build_err(&err, &file, &input);
             }
             return ExitCode::FAILURE;
         }
@@ -234,7 +234,7 @@ fn main() -> ExitCode {
                 code
             }
             Err(e) => {
-                report_ast_assembly_err(e, &file, &input);
+                report_ast_assembly_err(&e, &file, &input);
                 return ExitCode::FAILURE;
             }
         }
@@ -242,19 +242,14 @@ fn main() -> ExitCode {
         match assemble_ast(ast) {
             Ok(code) => code,
             Err(e) => {
-                report_ast_assembly_err(e, &file, &input);
+                report_ast_assembly_err(&e, &file, &input);
                 return ExitCode::FAILURE;
             }
         }
     };
 
     if let Some(outfile) = args.output.as_deref() {
-        let writer = match OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(outfile)
-        {
+        let writer = match open_writable(outfile) {
             Ok(w) => w,
             Err(e) => {
                 eprintln!("Failed to open {} for writing: {e}.", outfile.display());
@@ -262,7 +257,7 @@ fn main() -> ExitCode {
             }
         };
         match args.format.output(intcode, writer) {
-            Ok(_) => ExitCode::SUCCESS,
+            Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
                 eprintln!("Failed to write to {}: {e}.", outfile.display());
                 ExitCode::FAILURE
