@@ -106,7 +106,9 @@ impl<IntoCow: Into<Cow<'static, str>>> From<IntoCow> for InputFormatError {
 
 fn main() -> Result<(), DisplayedError> {
     let args = Args::parse();
-    let input = if let Some(path) = args.input.as_deref() {
+    let input = if let Some(path) = args.input.as_deref()
+        && path != "-"
+    {
         fs::read(path)?
     } else {
         let mut v = Vec::new();
@@ -122,7 +124,9 @@ fn main() -> Result<(), DisplayedError> {
         disassemble(code)
     };
 
-    if let Some(outfile) = args.output.as_deref() {
+    if let Some(outfile) = args.output.as_deref()
+        && outfile != "-"
+    {
         fs::write(outfile, dissassembly.as_bytes())?;
     } else {
         print!("{dissassembly}");

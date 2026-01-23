@@ -188,7 +188,9 @@ fn main() -> ExitCode {
     let args = Args::parse();
     let (file, input) = {
         use std::borrow::Cow;
-        if let Some(path) = args.input.as_deref() {
+        if let Some(path) = args.input.as_deref()
+            && path != "-"
+        {
             (path.to_string_lossy(), read_to_string(path))
         } else {
             (Cow::Borrowed("stdin"), io::read_to_string(io::stdin()))
@@ -248,7 +250,9 @@ fn main() -> ExitCode {
         }
     };
 
-    if let Some(outfile) = args.output.as_deref() {
+    if let Some(outfile) = args.output.as_deref()
+        && outfile != "-"
+    {
         let writer = match open_writable(outfile) {
             Ok(w) => w,
             Err(e) => {
