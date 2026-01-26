@@ -6,7 +6,7 @@
 //! stdout for I/O
 
 use ial::debug_info::DebugInfo;
-use ial::prelude::*;
+use ial::{State, StepOutcome, prelude::*};
 use std::error::Error;
 use std::fmt::{self, Display};
 use std::fs::{self, OpenOptions, read_to_string};
@@ -47,6 +47,18 @@ struct Args {
     #[arg(short, long)]
     #[arg(default_value = "ascii")]
     format: CodeFormat,
+    #[arg(help = "Error out on invalid ascii")]
+    #[arg(short, long)]
+    #[arg(default_value = "true")]
+    strict_ascii: bool,
+    #[arg(help = "Disables buffering of output")]
+    #[arg(short, long)]
+    #[arg(default_value = "false")]
+    unbuffered_output: bool,
+    #[arg(help = "Show a trace of the interpreter as it runs (implies --unbuffered-output)")]
+    #[arg(short = 't', long)]
+    #[arg(default_value = "false")]
+    show_trace: bool,
 }
 
 macro_rules! to_ascii_char {
@@ -61,10 +73,10 @@ macro_rules! to_ascii_char {
         }
     }};
 }
-fn get_line() -> Result<impl Iterator<Item = i64>, AsciiError> {
+fn get_line(strict: bool) -> Result<impl Iterator<Item = i64>, AsciiError> {
     let mut buf = String::new();
     stdin().read_line(&mut buf).map_err(AsciiError::IoError)?;
-    if buf.is_ascii() {
+    if !strict || buf.is_ascii() {
         Ok(buf.into_bytes().into_iter().map(i64::from))
     } else {
         let bad_char = buf
@@ -75,33 +87,77 @@ fn get_line() -> Result<impl Iterator<Item = i64>, AsciiError> {
     }
 }
 
-fn print_ascii(intcode_output: Vec<i64>) -> Result<(), AsciiError> {
+fn print_ascii(intcode_output: Vec<i64>, strict: bool) -> Result<(), AsciiError> {
     let mut s = String::with_capacity(intcode_output.len());
     for i in intcode_output {
-        match i {
-            c @ 0..127 => s.push(to_ascii_char!(c)),
-            _ => return Err(AsciiError::InvalidAsciiInt(i)),
+        if let c @ 0..127 = i {
+            s.push(to_ascii_char!(c));
+        } else if strict {
+            return Err(AsciiError::InvalidAsciiInt(i));
+        } else {
+            print!("{s}«non-ASCII value {i}»");
+            s.clear();
         }
     }
     print!("{s}");
     Ok(())
 }
 
-fn interactive_run(mut interp: Interpreter) -> Result<(), (AsciiError, Interpreter)> {
-    macro_rules! err_with_interp {
-        ($e: expr) => {{
-            match $e {
-                Ok(ok) => ok,
-                Err(err) => return Err((err.into(), interp)),
-            }
-        }};
+macro_rules! err_with_interp {
+    ($e: expr, $i: ident) => {{
+        match $e {
+            Ok(ok) => ok,
+            Err(err) => return Err((err.into(), $i)),
+        }
+    }};
+}
+
+fn interactive_unbufferred(
+    mut interp: Interpreter,
+    strict: bool,
+    trace: bool,
+) -> Result<(), (AsciiError, Interpreter)> {
+    if trace {
+        interp.start_trace();
     }
-    let (output, mut state) = err_with_interp!(interp.run_through_inputs(empty()));
-    err_with_interp!(print_ascii(output));
-    while state != ial::State::Halted {
-        let (output, new_state) =
-            err_with_interp!(interp.run_through_inputs(err_with_interp!(get_line())));
-        err_with_interp!(print_ascii(output));
+    err_with_interp!(interp.precompute(), interp);
+    if trace && let Some(t) = interp.start_trace().unwrap().0.first() {
+        eprintln!("{t:?}");
+    }
+    let mut inputs = None;
+    loop {
+        let mut output = Vec::with_capacity(1);
+        let step_outcome = if let Some(inputs) = inputs.as_mut() {
+            interp.exec_instruction(inputs, &mut output)
+        } else {
+            interp.exec_instruction(&mut empty(), &mut output)
+        };
+        match err_with_interp!(step_outcome, interp) {
+            StepOutcome::Running => {
+                err_with_interp!(print_ascii(output, strict), interp);
+                if trace {
+                    eprintln!("{:?}", interp.start_trace().unwrap().0[0]);
+                }
+            }
+            StepOutcome::Stopped(State::Awaiting) => {
+                inputs = Some(err_with_interp!(get_line(strict), interp));
+            }
+            StepOutcome::Stopped(State::Halted) => break,
+        }
+    }
+    eprintln!("{:?}", interp.start_trace().unwrap());
+    Ok(())
+}
+
+fn interactive_run(mut interp: Interpreter, strict: bool) -> Result<(), (AsciiError, Interpreter)> {
+    let (output, mut state) = err_with_interp!(interp.run_through_inputs(empty()), interp);
+    err_with_interp!(print_ascii(output, strict), interp);
+    while state != State::Halted {
+        let (output, new_state) = err_with_interp!(
+            interp.run_through_inputs(err_with_interp!(get_line(strict), interp)),
+            interp
+        );
+        err_with_interp!(print_ascii(output, strict), interp);
         state = new_state;
     }
     Ok(())
@@ -138,7 +194,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let prog = Interpreter::new(prog);
-    if let Err((err, interp)) = interactive_run(prog) {
+
+    let run_outcome = if args.unbuffered_output || args.show_trace {
+        interactive_unbufferred(prog, args.strict_ascii, args.show_trace)
+    } else {
+        interactive_run(prog, args.strict_ascii)
+    };
+
+    if let Err((err, interp)) = run_outcome {
         if let Some(debug_info) = debug_info.as_ref() {
             eprintln!("INTERPRETER ERROR\n\n");
             interp.write_diagnostic(debug_info, &mut stderr())?;
