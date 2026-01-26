@@ -274,7 +274,10 @@ fn check_labels(
 ) -> Result<(), DebugInfoError> {
     while let Some((label, label_addr)) = labels.pop_front() {
         match label_addr {
-            i if i < addr => labels.push_front((label, label_addr)),
+            i if i > addr => {
+                labels.push_front((label, label_addr));
+                break;
+            }
             i if i == addr => writeln_string!(disasm, "{label}:"),
             _ => {
                 return Err(DebugInfoError::MisalignedLabel(
