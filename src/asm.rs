@@ -567,7 +567,7 @@ pub enum Directive<'a> {
     Instruction(Box<Instr<'a>>),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 /// A single line of assembly, containing an optional label, an optional directive, and an optional
 /// comment - the last of which is not stored.
 pub struct Line<'a> {
