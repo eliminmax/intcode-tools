@@ -664,9 +664,12 @@ pub fn build_ast(code: &str) -> Result<Vec<Line<'_>>, Vec<Rich<'_, char>>> {
 type RawDebugInfo<'a> = (Vec<(Spanned<&'a str>, i64)>, Vec<DirectiveDebug>);
 
 /// Common implementation of [`assemble_ast`] and [`assemble_with_debug`].
-/// If `DEBUG` is false, then both vecs in the returned [`RawDebugInfo`] will be empty
-fn assemble_inner<'a, const DEBUG: bool>(
+///
+/// If `generate_debug` is false, then both vecs in the returned [`RawDebugInfo`] will be empty to
+/// avoid allocating
+fn assemble_inner<'a>(
     code: Vec<Line<'a>>,
+    generate_debug: bool,
 ) -> Result<(Vec<i64>, RawDebugInfo<'a>), AssemblyError<'a>> {
     let mut labels: HashMap<&'a str, (i64, SimpleSpan)> = HashMap::new();
     let mut index = 0;
@@ -690,7 +693,7 @@ fn assemble_inner<'a, const DEBUG: bool>(
         }
     }
 
-    let label_spans = if DEBUG {
+    let label_spans = if generate_debug {
         labels
             .iter()
             .map(|(&inner, &(index, span))| (Spanned { inner, span }, index))
@@ -706,7 +709,7 @@ fn assemble_inner<'a, const DEBUG: bool>(
     let mut v = Vec::with_capacity(index.try_into().unwrap_or_default());
 
     for line in code {
-        if DEBUG {
+        if generate_debug {
             if let Some(spanned) = line.inner.as_ref() {
                 let kind = spanned.inner.dtype();
                 let src_span = spanned.span;
@@ -746,7 +749,7 @@ fn assemble_inner<'a, const DEBUG: bool>(
 pub fn assemble_with_debug(
     code: Vec<Line<'_>>,
 ) -> Result<(Vec<i64>, DebugInfo), AssemblyError<'_>> {
-    assemble_inner::<true>(code).map(|(output, (labels, directives))| {
+    assemble_inner(code, true).map(|(output, (labels, directives))| {
         let labels = labels
             .into_iter()
             .map(|(Spanned { inner, span }, index)| {
@@ -794,7 +797,7 @@ pub fn assemble_with_debug(
 /// assert_eq!(assemble_ast(ast).unwrap(), vec![99]);
 /// ```
 pub fn assemble_ast(code: Vec<Line<'_>>) -> Result<Vec<i64>, AssemblyError<'_>> {
-    assemble_inner::<false>(code).map(|(output, _)| output)
+    assemble_inner(code, false).map(|(output, _)| output)
 }
 
 /// An error that indicates where in the assembly process a failure occured, and wraps around the
